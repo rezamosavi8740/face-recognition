@@ -53,13 +53,13 @@ if __name__ == '__main__':
     random_utils.setup_seed(seed=cfg.trainers.seed, cuda_deterministic=False)
 
     loggers = []
-    wandb_logger =None
+    wandb_logger = None
     csv_logger = CSVLogger(root_dir=cfg.trainers.output_dir, flush_logs_every_n_steps=1)
     loggers.append(csv_logger)
     if cfg.trainers.using_wandb:
         wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
                                    name=os.path.basename(cfg.trainers.output_dir),
-                                   log_model=True, log="all", log_freq=100)
+                                   log_model="all")
         loggers.append(wandb_logger)
 
 
@@ -84,14 +84,14 @@ if __name__ == '__main__':
 
     # get model
     model = get_model(cfg.models, cfg.trainers.task)
-    wandb_logger.watch(model, log="all", log_freq=100)
+    #wandb_logger.watch(model, log="all", log_freq=100)
 
-
+    """
     print("\nTrainable layers (requires_grad=True):")
     for name, param in model.named_parameters():
         if param.requires_grad:
             print(f" - {name}")
-
+    """
 
     train_transform = model.make_train_transform()
     test_transform = model.make_test_transform()
@@ -131,6 +131,8 @@ if __name__ == '__main__':
     # get optimizer
     optimizer = make_optimizer(cfg, model, classifier, aligner)
     lr_scheduler = make_scheduler(cfg, optimizer)
+    if cfg.trainers.using_wandb:
+        wandb_logger.watch(model, log="all", log_freq=100)
 
     # prepare accelerator
     if model.has_trainable_params():
