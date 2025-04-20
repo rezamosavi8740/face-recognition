@@ -1,5 +1,5 @@
 defaults:
-  - trainers: configs/adaface_ir101_finetune_440k
+  - trainers: configs/default
   - optims: configs/cosine
   - pefts: configs/none
   - models: iresnet/configs/v1_ir101

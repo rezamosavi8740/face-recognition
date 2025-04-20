@@ -76,6 +76,9 @@ if __name__ == '__main__':
     cfg.trainers.world_size = fabric.world_size
     print = fabric.print
 
+    print("Batch Size : " + str(cfg.trainers.batch_size))
+    cfg.evaluations.eval_every_n_epochs = 1
+
     # get model
     model = get_model(cfg.models, cfg.trainers.task)
     train_transform = model.make_train_transform()
@@ -227,6 +230,7 @@ if __name__ == '__main__':
             tic = time.time()
 
         # validation
+        print("cfg.evaluations.eval_every_n_epochs : " + str(cfg.evaluations.eval_every_n_epochs))
         if cfg.evaluations.eval_every_n_epochs > 0:
             print('Evaluation Started')
             eval_start_time = time.time()

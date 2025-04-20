@@ -1,7 +1,7 @@
 #!/bin/bash
 
 LIGHTING_TESTING=1 CUDA_VISIBLE_DEVICES=0 python train.py \
-  trainers=configs/adaface_ir101_finetune_440k.yaml \
+  trainers=configs/default.yaml \
   trainers.num_gpu=1 \
   trainers.batch_size=512 \
   trainers.gradient_acc=1 \

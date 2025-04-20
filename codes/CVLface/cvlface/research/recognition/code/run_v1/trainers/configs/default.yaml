@@ -16,11 +16,11 @@ gradient_acc: 1
 seed: 2048
 num_workers: 3
 
-wandb_key: ''
+wandb_key: '75030e53fb0d9ddb9730f478e6128d48aed23923'
 suffix_run_name: None
 using_wandb: True
-wandb_entity: 'mckim'
-wandb_log_all: False
+wandb_entity: 'reza.mosavi.8740@gmail.com'
+wandb_log_all: True
 
 resume: ''
 
