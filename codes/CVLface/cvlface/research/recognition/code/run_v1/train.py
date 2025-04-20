@@ -53,13 +53,15 @@ if __name__ == '__main__':
     random_utils.setup_seed(seed=cfg.trainers.seed, cuda_deterministic=False)
 
     loggers = []
+    wandb_logger =None
     csv_logger = CSVLogger(root_dir=cfg.trainers.output_dir, flush_logs_every_n_steps=1)
     loggers.append(csv_logger)
     if cfg.trainers.using_wandb:
         wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
                                    name=os.path.basename(cfg.trainers.output_dir),
-                                   log_model=False)
+                                   log_model=True, log="all", log_freq=100)
         loggers.append(wandb_logger)
+
 
     # grad_max_norm?
     fabric = Fabric(precision=cfg.trainers.precision,
@@ -77,10 +79,20 @@ if __name__ == '__main__':
     print = fabric.print
 
     print("Batch Size : " + str(cfg.trainers.batch_size))
+    print("Datasets  : " + str(cfg.dataset))
     cfg.evaluations.eval_every_n_epochs = 1
 
     # get model
     model = get_model(cfg.models, cfg.trainers.task)
+    wandb_logger.watch(model, log="all", log_freq=100)
+
+
+    print("\nTrainable layers (requires_grad=True):")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f" - {name}")
+
+
     train_transform = model.make_train_transform()
     test_transform = model.make_test_transform()
 
