@@ -5,7 +5,7 @@ defaults:
   - models: iresnet/configs/v1_ir101
   - classifiers: configs/fc
   - aligners: configs/none
-  - dataset: configs/440k
+  - dataset: configs/400k
   - data_augs: configs/basic_v1
   - losses: configs/arcface
   - pipelines: configs/train_model_cls

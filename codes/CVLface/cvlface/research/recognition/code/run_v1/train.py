@@ -86,12 +86,12 @@ if __name__ == '__main__':
     model = get_model(cfg.models, cfg.trainers.task)
     #wandb_logger.watch(model, log="all", log_freq=100)
 
-    """
+    
     print("\nTrainable layers (requires_grad=True):")
     for name, param in model.named_parameters():
         if param.requires_grad:
             print(f" - {name}")
-    """
+
 
     train_transform = model.make_train_transform()
     test_transform = model.make_test_transform()

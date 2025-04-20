@@ -3,4 +3,4 @@ color_space: 'RGB'
 name: 'ir101'
 output_dim: 512
 start_from: '/home/user1/face-recognition/codes/CVLface/cvlface/pretrained_models/adaface_ir101_webface12m/model.pt'
-freeze: False
+freeze: True
