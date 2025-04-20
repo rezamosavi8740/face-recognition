@@ -83,6 +83,7 @@ def create_verification_csv(
     print(f"Positive pairs: {total_iters}")
     print(f"Negative pairs: {total_iters * negative_ratio}")
 
+
 def create_verification_dataset(csv_path, image_dir):
     df = pd.read_csv(csv_path)
     image_paths = []
@@ -94,8 +95,8 @@ def create_verification_dataset(csv_path, image_dir):
         image_paths.append(os.path.join(image_dir, row["image2"]))
         is_same_list.append(row["is_same"])
         is_same_list.append(row["is_same"])
-        index_list.append(idx * 2)
-        index_list.append(idx * 2 + 1)
+        index_list.append(idx)
+        index_list.append(idx)
 
     dataset = Dataset.from_dict({
         "image": image_paths,
@@ -106,22 +107,25 @@ def create_verification_dataset(csv_path, image_dir):
     dataset = dataset.cast_column("image", Image())
     return dataset
 
-root_dir = "/home/user1/data/model/data/clean/440_aligned"
-output_csv = "/home/user1/newdata/440k_10_negative_ratio_valid/pairs.csv"
-num_pairs_per_person = 2
-negative_ratio = 10
-max_iters = None
 
-create_verification_csv(
-    root_dir=root_dir,
-    output_csv=output_csv,
-    num_pairs_per_person=num_pairs_per_person,
-    negative_ratio=negative_ratio,
-    max_iters=max_iters,
-    filter_strict_format=False,
-    one_positive_per_person=False,
-    num_workers=20
-)
 
-dataset = create_verification_dataset(output_csv, root_dir)
-dataset.save_to_disk("/home/user1/newdata/440k_10_negative_ratio_valid")
+if __name__ == "__main__":
+    root_dir = "/home/user1/data/model/data/clean/eval_data"
+    output_csv = "/home/user1/newdata/eval_data/pairs.csv"
+    num_pairs_per_person = 2
+    negative_ratio = 2
+    max_iters = None
+
+    create_verification_csv(
+        root_dir=root_dir,
+        output_csv=output_csv,
+        num_pairs_per_person=num_pairs_per_person,
+        negative_ratio=negative_ratio,
+        max_iters=max_iters,
+        filter_strict_format=False,
+        one_positive_per_person=False,
+        num_workers=20
+    )
+
+    dataset = create_verification_dataset(output_csv, root_dir)
+    dataset.save_to_disk("/home/user1/newdata/eval_data")
