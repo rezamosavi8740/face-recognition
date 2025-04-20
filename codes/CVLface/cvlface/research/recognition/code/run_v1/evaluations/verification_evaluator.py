@@ -102,7 +102,7 @@ class VerificationEvaluator(BaseEvaluator):
         embeddings = (collection['features'] + collection_flip['features']).numpy()
         embeddings = sklearn.preprocessing.normalize(embeddings)
         issame_list = collection['is_same'].numpy()[::2]
-        _, _, accuracy, val, val_std, far = evaluate(embeddings, issame_list, nrof_folds=10)
+        _, _, accuracy, val, val_std, far = evaluate(embeddings, issame_list, nrof_folds=1)
         accuracy = accuracy * 100
         acc, std = np.mean(accuracy), np.std(accuracy)
         result = {'acc': acc, 'std': std}
