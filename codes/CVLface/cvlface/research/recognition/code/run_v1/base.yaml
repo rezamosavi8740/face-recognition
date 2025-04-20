@@ -1,12 +1,12 @@
 defaults:
-  - trainers : configs/default
-  - optims : configs/cosine
+  - trainers: configs/adaface_ir101_finetune_440k
+  - optims: configs/cosine
   - pefts: configs/none
-  - models: vit/configs/v1_small
-  - classifiers: configs/partial_fc
+  - models: iresnet/configs/v1_ir101
+  - classifiers: configs/fc
   - aligners: configs/none
-  - dataset: configs/casia
-  - data_augs: configs/v7
-  - losses: configs/adaface
+  - dataset: configs/440k
+  - data_augs: configs/basic_v1
+  - losses: configs/arcface
   - pipelines: configs/train_model_cls
-  - evaluations: configs/base
+  - evaluations: /configs/quick

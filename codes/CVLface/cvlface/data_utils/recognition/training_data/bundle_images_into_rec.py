@@ -94,13 +94,19 @@ if __name__ == '__main__':
     parser.add_argument('--source_dir', type=str,
                         help='Directory containing labeled image folders. '
                              'Example structure: label1/image.png, label2/image1.png, label2/image2.png')
+
+    parser.add_argument('--out_dir', type=str,
+                        help='Directory containing labeled image folders. '
+                             'Example structure: label1/image.png, label2/image1.png, label2/image2.png')
+
     parser.add_argument('--remove_images', action='store_true',)
 
     args = parser.parse_args()
     source_dir = args.source_dir
+    out_dir = args.out_dir
     if source_dir.endswith('/'):
         source_dir = source_dir[:-1]
-    save_dir = source_dir
+    save_dir = out_dir
 
     # find all images
     print('Finding all images in', source_dir)

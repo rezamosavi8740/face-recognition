@@ -1,0 +1,8 @@
+data_root: '/home/user1/data/model/data/clean/440_aligned'
+rec: '/home/user1/newdata/temp'   # note: missing "/" at the start
+color_space: 'RGB'
+num_classes: 393083
+num_image: 8401156
+
+repeated_sampling_cfg: null
+semi_sampling_cfg: null   # note: missing "/" at the start
