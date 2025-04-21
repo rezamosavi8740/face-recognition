@@ -13,7 +13,7 @@ LIGHTING_TESTING=1 CUDA_VISIBLE_DEVICES=0 python train.py \
   models=iresnet/configs/v1_ir101.yaml \
   pipelines=configs/train_model_cls.yaml \
   evaluations=configs/quick.yaml \
-  classifiers=configs/partial_fc.yaml \
+  classifiers=configs/fc.yaml \
   optims=configs/cosine.yaml \
   losses=configs/adaface.yaml \
   trainers.output_dir="/home/user1/temp/checkpoints" \
