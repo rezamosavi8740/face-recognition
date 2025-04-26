@@ -49,9 +49,10 @@ if __name__ == '__main__':
     parser.add_argument('--precision', type=str, default='32-true')
     parser.add_argument('--eval_config_name', type=str, default='quick')
     parser.add_argument('--pipeline_name', type=str, default='default')
-    parser.add_argument('--ckpt_dir', type=str, default="../../../../pretrained_models/recognition/adaface_ir101_webface12m")
+    parser.add_argument('--ckpt_dir', type=str, default="")
     args = parser.parse_args()
 
+    print(args.ckpt_dir)
     # setup output dir
     runname, save_dir_task, task = get_runname_and_task(args.ckpt_dir)
     eval_config = load_config(f'evaluations/configs/{args.eval_config_name}.yaml')
@@ -59,11 +60,13 @@ if __name__ == '__main__':
     os.makedirs(output_dir, exist_ok=True)
 
     # load model
+
     model_config = load_config(os.path.join(args.ckpt_dir, 'model.yaml'))
     model = get_model(model_config, task)
     model.load_state_dict_from_path(os.path.join(args.ckpt_dir, 'model.pt'))
     train_transform = model.make_train_transform()
     test_transform = model.make_test_transform()
+    print(model)
 
     # maybe load aligner
     if os.path.exists(os.path.join(args.ckpt_dir, 'aligner.yaml')):
@@ -90,7 +93,7 @@ if __name__ == '__main__':
                                log_model=False)
     fabric = Fabric(precision='32-true',
                     accelerator="auto",
-                    strategy="ddp",
+                    strategy="auto",
                     devices=args.num_gpu,
                     loggers=[csv_logger, wandb_logger],
                     )

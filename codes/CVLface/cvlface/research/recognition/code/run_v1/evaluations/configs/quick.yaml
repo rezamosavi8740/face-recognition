@@ -1,11 +1,39 @@
-data_root: "/home/user1/"
+# quick.yaml
+data_root: "/home/user1/Download/"
 eval_every_n_epochs: 1
-per_epoch_evaluations: {
-  "eval": {
-    'path': 'newdata/eval_data',
-    'evaluation_type': 'verification',
-    'color_space': 'RGB',
-    'batch_size': 128,
-    'num_workers': 16
-  },
-}
+
+per_epoch_evaluations:
+  lfw:
+    path: "facerec_val/lfw"
+    evaluation_type: "verification"
+    color_space: "RGB"
+    batch_size: 128
+    num_workers: 8
+
+  agedb_30:
+    path: "facerec_val/agedb_30"
+    evaluation_type: "verification"
+    color_space: "RGB"
+    batch_size: 128
+    num_workers: 8
+
+  cfpfp:
+    path: "facerec_val/cfp_fp"
+    evaluation_type: "verification"
+    color_space: "RGB"
+    batch_size: 128
+    num_workers: 8
+
+  cplfw:
+    path: "facerec_val/cplfw"
+    evaluation_type: "verification"
+    color_space: "RGB"
+    batch_size: 128
+    num_workers: 8
+
+  calfw:
+    path: "facerec_val/calfw"
+    evaluation_type: "verification"
+    color_space: "RGB"
+    batch_size: 128
+    num_workers: 8

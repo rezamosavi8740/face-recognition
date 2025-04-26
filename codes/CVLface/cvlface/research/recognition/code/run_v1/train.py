@@ -77,7 +77,7 @@ if __name__ == '__main__':
     print("Batch Size : " + str(cfg.trainers.batch_size))
     print("Datasets  : " + str(cfg.dataset))
     cfg.evaluations.eval_every_n_epochs = 1
-
+    print("Val Data  : " + str(cfg.evaluations))
     # get model
     model = get_model(cfg.models, cfg.trainers.task)
 
