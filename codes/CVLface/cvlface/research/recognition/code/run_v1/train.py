@@ -41,6 +41,15 @@ from general_utils.dist_utils import verify_ddp_weights_equal
 from functools import partial
 from fabric.fabric import setup_dataloader_from_dataset
 
+# === FIXED FREEZE FUNCTION ===
+def freeze_all_except_block(model, block_name="net.body.48"):
+    for name, param in model.named_parameters():
+        if block_name not in name:
+            param.requires_grad = False
+            print(f"Froze layer: {name}")
+        else:
+            print(f"Kept trainable: {name}")
+
 
 if __name__ == '__main__':
 
@@ -80,13 +89,8 @@ if __name__ == '__main__':
     print("Val Data  : " + str(cfg.evaluations))
     # get model
     model = get_model(cfg.models, cfg.trainers.task)
-
-    if cfg.trainers.using_wandb:
-        wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
-                                   name=os.path.basename(cfg.trainers.output_dir),
-                                   log_model=True)
-        wandb_logger.watch(model, log="all", log_freq=100)
-        loggers.append(wandb_logger)
+    print('HI----------')
+    print(model)
 
 
     print("\nTrainable layers (requires_grad=True):")
@@ -123,15 +127,33 @@ if __name__ == '__main__':
                                 num_classes=cfg.dataset.num_classes+extra_classes,
                                 rank=fabric.local_rank,
                                 world_size=fabric.world_size)
-    if cfg.trainers.using_wandb:
-        wandb_logger.watch(classifier, log="all", log_freq=100)
-        loggers.append(wandb_logger)
+
 
     # get aligner
     aligner = get_aligner(cfg.aligners)
 
     # apply peft if needed
     model, classifier = apply_peft(cfg.pefts, model=model, classifier=classifier, data_cfg=cfg.dataset, label_mapping=label_mapping)
+
+    # === Freeze everything except block 48 ===
+    freeze_all_except_block(model, block_name="net.body.48")
+
+    if cfg.trainers.using_wandb:
+        wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
+                                   name=os.path.basename(cfg.trainers.output_dir),
+                                   log_model=True)
+        wandb_logger.watch(model, log="all", log_freq=100)
+        loggers.append(wandb_logger)
+    #
+    # if cfg.trainers.using_wandb:
+    #     wandb_logger.watch(classifier, log="all", log_freq=100)
+    #     loggers.append(wandb_logger)
+    # === Print all layers that are still trainable ===
+    print("\n=== Trainable layers after freezing ===")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(name)
+    print("=== End of trainable layers ===\n")
 
     # get optimizer
     optimizer = make_optimizer(cfg, model, classifier, aligner)
@@ -160,6 +182,7 @@ if __name__ == '__main__':
     verify_ddp_weights_equal(model)
     if classifier is not None:
         verify_ddp_weights_equal(classifier)
+    # print(model)
 
     # make train pipe (after accelerator setup)
     train_pipeline = pipeline_from_config(cfg.pipelines, model, classifier, aligner, optimizer, lr_scheduler)
