@@ -40,6 +40,7 @@ from pefts import apply_peft
 from general_utils.dist_utils import verify_ddp_weights_equal
 from functools import partial
 from fabric.fabric import setup_dataloader_from_dataset
+from models.Embedding.AddingLayer import ModelWithEmbedding
 
 
 if __name__ == '__main__':
@@ -160,6 +161,12 @@ if __name__ == '__main__':
     verify_ddp_weights_equal(model)
     if classifier is not None:
         verify_ddp_weights_equal(classifier)
+
+
+    """
+        test to add embedding layer
+    """
+
 
     # make train pipe (after accelerator setup)
     train_pipeline = pipeline_from_config(cfg.pipelines, model, classifier, aligner, optimizer, lr_scheduler)

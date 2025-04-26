@@ -19,7 +19,8 @@ class FCClassifier(BaseClassifier):
         if classifier_cfg.name == 'fc':
             classifier = FC(
                 margin_loss=margin_loss_fn,
-                embedding_size=model_cfg.output_dim,
+                #embedding_size=model_cfg.output_dim,
+                embedding_size=756,
                 num_classes=num_classes,
             )
         else:
