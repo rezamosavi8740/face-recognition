@@ -31,6 +31,7 @@ from optims.lr_scheduler import make_scheduler, scheduler_step, get_last_lr
 from pipelines import pipeline_from_config, pipeline_from_name
 import omegaconf
 import lovely_tensors as lt
+
 lt.monkey_patch()
 from tqdm import tqdm
 from evaluations import IsBestTracker, summary
@@ -162,10 +163,16 @@ if __name__ == '__main__':
     if classifier is not None:
         verify_ddp_weights_equal(classifier)
 
-
     """
         test to add embedding layer
     """
+    model = ModelWithEmbedding(model)
+
+    # Reapply fabric.setup to the wrapped model
+    if model.has_trainable_params():
+        model, optimizer = fabric.setup(model, optimizer)  # Setup the wrapped model
+    else:
+        model = model.to(fabric.device)  # Move to device if no trainable params
 
 
     # make train pipe (after accelerator setup)
