@@ -138,8 +138,10 @@ if __name__ == '__main__':
     # get optimizer
     optimizer = make_optimizer(cfg, model, classifier, aligner)
     lr_scheduler = make_scheduler(cfg, optimizer)
-
-
+    """
+            test to add embedding layer
+        """
+    model = ModelWithEmbedding(model)
 
     # prepare accelerator
     if model.has_trainable_params():
@@ -163,16 +165,6 @@ if __name__ == '__main__':
     if classifier is not None:
         verify_ddp_weights_equal(classifier)
 
-    """
-        test to add embedding layer
-    """
-    model = ModelWithEmbedding(model)
-
-    # Reapply fabric.setup to the wrapped model
-    if model.has_trainable_params():
-        model, optimizer = fabric.setup(model, optimizer)  # Setup the wrapped model
-    else:
-        model = model.to(fabric.device)  # Move to device if no trainable params
 
 
     # make train pipe (after accelerator setup)
