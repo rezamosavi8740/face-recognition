@@ -47,7 +47,7 @@ per_epoch_evaluations:
 
   tinyface_eval:
     path: "Download/facerec_val/tinyface_aligned_pad_0.1"
-    evaluation_type: "verification"
+    evaluation_type: "tinyface"
     color_space: "RGB"
     batch_size: 128
     num_workers: 8
