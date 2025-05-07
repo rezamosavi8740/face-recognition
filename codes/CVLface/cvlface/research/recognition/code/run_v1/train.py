@@ -83,12 +83,12 @@ if __name__ == '__main__':
     # get model
     model = get_model(cfg.models, cfg.trainers.task)
 
-    if cfg.trainers.using_wandb:
-        wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
-                                   name=os.path.basename(cfg.trainers.output_dir),
-                                   log_model=True)
-        wandb_logger.watch(model, log="all", log_freq=100)
-        loggers.append(wandb_logger)
+    # if cfg.trainers.using_wandb:
+    #     wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
+    #                                name=os.path.basename(cfg.trainers.output_dir),
+    #                                log_model=True)
+    #     wandb_logger.watch(model, log="all", log_freq=100)
+    #     loggers.append(wandb_logger)
 
 
     print("\nTrainable layers (requires_grad=True):")
@@ -125,9 +125,7 @@ if __name__ == '__main__':
                                 num_classes=cfg.dataset.num_classes+extra_classes,
                                 rank=fabric.local_rank,
                                 world_size=fabric.world_size)
-    if cfg.trainers.using_wandb:
-        wandb_logger.watch(classifier, log="all", log_freq=100)
-        loggers.append(wandb_logger)
+
 
     # get aligner
     aligner = get_aligner(cfg.aligners)
@@ -142,6 +140,13 @@ if __name__ == '__main__':
             test to add embedding layer
         """
     model = ModelWithEmbedding(model)
+
+    if cfg.trainers.using_wandb:
+        wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
+                                   name=os.path.basename(cfg.trainers.output_dir),
+                                   log_model=True)
+        wandb_logger.watch(model, log="all", log_freq=100)
+        loggers.append(wandb_logger)
 
     # prepare accelerator
     if model.has_trainable_params():
@@ -170,6 +175,12 @@ if __name__ == '__main__':
     # make train pipe (after accelerator setup)
     train_pipeline = pipeline_from_config(cfg.pipelines, model, classifier, aligner, optimizer, lr_scheduler)
     train_pipeline.integrity_check(dataloader.dataset)
+
+    print("\nModel layers and their trainable status:")
+    for name, module in model.named_modules():
+        for param_name, param in module.named_parameters(recurse=False):
+            full_param_name = f"{name}.{param_name}" if name else param_name
+            print(f"Layer: {full_param_name} | requires_grad: {param.requires_grad}")
 
     # make inference pipe (after accelerator setup)
     eval_pipeline = pipeline_from_name(cfg.pipelines.eval_pipeline_name, model, aligner)
