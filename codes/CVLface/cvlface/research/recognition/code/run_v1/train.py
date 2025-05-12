@@ -31,6 +31,7 @@ from optims.lr_scheduler import make_scheduler, scheduler_step, get_last_lr
 from pipelines import pipeline_from_config, pipeline_from_name
 import omegaconf
 import lovely_tensors as lt
+
 lt.monkey_patch()
 from tqdm import tqdm
 from evaluations import IsBestTracker, summary
@@ -40,16 +41,15 @@ from pefts import apply_peft
 from general_utils.dist_utils import verify_ddp_weights_equal
 from functools import partial
 from fabric.fabric import setup_dataloader_from_dataset
+from models.Embedding.AddingLayer import ModelWithEmbedding
 
-# === FIXED FREEZE FUNCTION ===
-def freeze_all_except_block(model, block_name="net.body.48"):
+def freeze_all_except_block(model, block_names=["net.body.24", "net.body.48"]):
     for name, param in model.named_parameters():
-        if block_name not in name:
+        if any(block_name in name for block_name in block_names):
+            print(f"Kept trainable: {name}")
+        else:
             param.requires_grad = False
             print(f"Froze layer: {name}")
-        else:
-            print(f"Kept trainable: {name}")
-
 
 if __name__ == '__main__':
 
@@ -89,8 +89,18 @@ if __name__ == '__main__':
     print("Val Data  : " + str(cfg.evaluations))
     # get model
     model = get_model(cfg.models, cfg.trainers.task)
+
     print('HI----------')
     print(model)
+
+
+    # if cfg.trainers.using_wandb:
+    #     wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
+    #                                name=os.path.basename(cfg.trainers.output_dir),
+    #                                log_model=True)
+    #     wandb_logger.watch(model, log="all", log_freq=100)
+    #     loggers.append(wandb_logger)
+
 
 
     print("\nTrainable layers (requires_grad=True):")
@@ -135,8 +145,7 @@ if __name__ == '__main__':
     # apply peft if needed
     model, classifier = apply_peft(cfg.pefts, model=model, classifier=classifier, data_cfg=cfg.dataset, label_mapping=label_mapping)
 
-    # === Freeze everything except block 48 ===
-    freeze_all_except_block(model, block_name="net.body.48")
+    freeze_all_except_block(model, block_names=["net.body.24", "net.body.48"])
 
     if cfg.trainers.using_wandb:
         wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
@@ -158,8 +167,17 @@ if __name__ == '__main__':
     # get optimizer
     optimizer = make_optimizer(cfg, model, classifier, aligner)
     lr_scheduler = make_scheduler(cfg, optimizer)
+    """
+            test to add embedding layer
+    """
+    model = ModelWithEmbedding(model)
 
-
+    if cfg.trainers.using_wandb:
+        wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
+                                   name=os.path.basename(cfg.trainers.output_dir),
+                                   log_model=True)
+        wandb_logger.watch(model, log="all", log_freq=100)
+        loggers.append(wandb_logger)
 
     # prepare accelerator
     if model.has_trainable_params():
@@ -184,9 +202,17 @@ if __name__ == '__main__':
         verify_ddp_weights_equal(classifier)
     # print(model)
 
+
+
     # make train pipe (after accelerator setup)
     train_pipeline = pipeline_from_config(cfg.pipelines, model, classifier, aligner, optimizer, lr_scheduler)
     train_pipeline.integrity_check(dataloader.dataset)
+
+    print("\nModel layers and their trainable status:")
+    for name, module in model.named_modules():
+        for param_name, param in module.named_parameters(recurse=False):
+            full_param_name = f"{name}.{param_name}" if name else param_name
+            print(f"Layer: {full_param_name} | requires_grad: {param.requires_grad}")
 
     # make inference pipe (after accelerator setup)
     eval_pipeline = pipeline_from_name(cfg.pipelines.eval_pipeline_name, model, aligner)
