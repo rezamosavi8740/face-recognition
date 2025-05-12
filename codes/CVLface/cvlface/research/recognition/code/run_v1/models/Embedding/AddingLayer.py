@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 
 class SimpleConfig:
     def __init__(self, color_space='RGB', freeze=False, num_classes=None, embedding_size=512):
@@ -24,12 +26,12 @@ class ModelWithEmbedding(nn.Module):
 
         # Ensure new layers are trainable
         self.embedding_layer.weight.requires_grad = True
-        self.embedding_layer.bias.requires_grad = True
+        self.embedding_layer.bias.requires_grad = False
 
     def forward(self, x):
         x = self.base_model(x)
         x = self.embedding_layer(x)
-        x = self.relu(x)
+        #x = F.normalize(x, dim=1)
         return x
 
     def has_trainable_params(self):

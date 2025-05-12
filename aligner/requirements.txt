@@ -1,0 +1,28 @@
+# MinIO & AWS S3
+boto3
+minio
+
+# Elasticsearch
+elasticsearch==8.17.1
+
+# Config & env parsing
+python-dotenv
+PyYAML
+
+# Utilities & ML
+python-box
+lap>=0.5.12
+scikit-image
+opencv-python
+numpy
+tqdm
+requests
+
+# Triton client
+tritonclient[all]==2.40.0
+
+# Archives (unpacking/compression)
+rarfile           # for RAR support (requires unrar/rar on PATH)
+patool            # wrapper for many archive formats
+py7zr             # native Python 7z support
+libarchive-c      # bindings to libarchive (tar, zip, etc.)
