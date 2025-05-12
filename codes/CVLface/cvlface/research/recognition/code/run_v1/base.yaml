@@ -3,9 +3,9 @@ defaults:
   - optims: configs/cosine
   - pefts: configs/none
   - models: iresnet/configs/v1_ir101
-  - classifiers: configs/fc
+  - classifiers: configs/partial_fc
   - aligners: configs/none
-  - dataset: configs/400k
+  - dataset: configs/data_final
   - data_augs: configs/basic_v1
   - losses: configs/arcface
   - pipelines: configs/train_model_cls

@@ -1,8 +1,13 @@
 FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
+ENV DATA_ALIGNED=/data/output/aligned
+ENV DATA_TRAIN_FORMAT=/data/output/train_format
+
 RUN apt-get update && apt-get install -y \
     git curl ffmpeg libglib2.0-0 libsm6 libxrender1 libxext6 \
     && rm -rf /var/lib/apt/lists/* \
+
+RUN apt-get update && apt-get install -y gettext
 
 COPY . /workspace/face-recognition
 WORKDIR /workspace/face-recognition/codes/CVLface
