@@ -1,2 +1,3 @@
 codes/CVLface/cvlface/pretrained_models/*
 facerec_val/
+train_fr.tar

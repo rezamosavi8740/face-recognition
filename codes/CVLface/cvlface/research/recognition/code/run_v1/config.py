@@ -31,10 +31,12 @@ def init(root):
 
     # writing config's path
     OmegaConf.set_struct(cfg, False)
+    BASE_YAML_PATH = os.path.join(os.path.dirname(__file__), 'base.yaml')
     base_cfg = {}
-    for row in OmegaConf.load('base.yaml')['defaults']:
+    for row in OmegaConf.load(BASE_YAML_PATH)['defaults']:
         for key, val in row.items():
             base_cfg[key] = val
+
     for key in Config.__dataclass_fields__.keys():
         has_override = [
             x.split('=')[1] if '.yaml' in x.split('=')[1] else x.split('=')[1] + '.yaml'
