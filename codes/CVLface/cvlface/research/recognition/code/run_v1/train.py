@@ -42,13 +42,13 @@ from functools import partial
 from fabric.fabric import setup_dataloader_from_dataset
 
 # === FIXED FREEZE FUNCTION ===
-def freeze_all_except_block(model, block_name="net.body.48"):
+def freeze_all_except_block(model, block_names=["net.body.24", "net.body.48"]):
     for name, param in model.named_parameters():
-        if block_name not in name:
+        if any(block_name in name for block_name in block_names):
+            print(f"Kept trainable: {name}")
+        else:
             param.requires_grad = False
             print(f"Froze layer: {name}")
-        else:
-            print(f"Kept trainable: {name}")
 
 
 if __name__ == '__main__':
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     model, classifier = apply_peft(cfg.pefts, model=model, classifier=classifier, data_cfg=cfg.dataset, label_mapping=label_mapping)
 
     # === Freeze everything except block 48 ===
-    freeze_all_except_block(model, block_name="net.body.48")
+    freeze_all_except_block(model, block_names=["net.body.24", "net.body.48"])
 
     if cfg.trainers.using_wandb:
         wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
