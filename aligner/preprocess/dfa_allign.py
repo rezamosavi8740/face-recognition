@@ -1,9 +1,10 @@
 import cv2
 import numpy as np
 from preprocess.dfa_inference import dfa_triton, dfa_warp
+from typing import Union
 
+def pad_bounding_box(x1: int, y1: int, x2: int, y2: int, image_shape: Union[np.ndarray, tuple[int, int]], padding=0.1):
 
-def pad_bounding_box(x1:int, y1:int, x2:int, y2:int, image_shape:np.ndarray | tuple[int, int], padding=0.1):
     """
     Pads a bounding box while ensuring it remains within the image boundaries.
 
@@ -17,7 +18,7 @@ def pad_bounding_box(x1:int, y1:int, x2:int, y2:int, image_shape:np.ndarray | tu
     """
     face_width = x2 - x1
     face_height = y2 - y1
-    padding_x = int(padding * face_width )
+    padding_x = int(padding * face_width)
     padding_y = int(padding * face_height)
     height, width = image_shape[:2]  # Extract height and width
     height = int(height)
@@ -29,19 +30,20 @@ def pad_bounding_box(x1:int, y1:int, x2:int, y2:int, image_shape:np.ndarray | tu
     y2_new = min(height, y2 + padding_y)
     return x1_new, y1_new, x2_new, y2_new
 
+
 def pad_bounding_box_symmetrically(
-    x1: int, 
-    y1: int, 
-    x2: int, 
-    y2: int, 
-    image_shape: tuple[int, int] | np.ndarray,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    image_shape: Union[tuple[int, int], np.ndarray],
     padding: float = 0.1
 ):
     """
     Expands the bounding box symmetrically around its center by a 'padding' fraction,
     ensuring the final box stays completely within the image.
 
-    The 'padding' value is a fraction of the face size in each dimension. 
+    The 'padding' value is a fraction of the face size in each dimension.
     E.g. padding=0.1 => 10% extra width on each side & 10% extra height on each side.
 
     Args:
@@ -106,12 +108,13 @@ def squre_bounding_box(x1, y1, x2, y2, original_shape):
     cx = x1 + width // 2
     cy = y1 + height // 2
     side = max(width, height)
-    new_x1 = max(0, cx - side//2)
-    new_y1 = max(0, cy - side//2)
+    new_x1 = max(0, cx - side // 2)
+    new_y1 = max(0, cy - side // 2)
     new_x2 = min(original_shape[1], new_x1 + side)
     new_y2 = min(original_shape[0], new_y1 + side)
-    
+
     return new_x1, new_y1, new_x2, new_y2
+
 
 def preprocess(img, size=(160, 160)):
     """Preprocessing step before feeding the network.
@@ -143,24 +146,22 @@ def preprocess(img, size=(160, 160)):
     out[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
     # img_show = cv2.resize(img, size)
     out = out.astype(np.float32)
-    out = out.transpose((2, 0, 1)) #HWC to CHW
-    out = np.expand_dims(out, 0) # change to batch form
-    out = (out / 255.0 - 0.5) / 0.5 # normalize image
+    out = out.transpose((2, 0, 1))  # HWC to CHW
+    out = np.expand_dims(out, 0)  # change to batch form
+    out = (out / 255.0 - 0.5) / 0.5  # normalize image
     return out
 
 
-
-
-def do_align_dfa(bbox:tuple[int, int, int, int, float], 
-             image:np.ndarray, original_shape:tuple[int, int], 
-             threshold=0.5) -> np.ndarray:
+def do_align_dfa(bbox: tuple[int, int, int, int, float],
+                 image: np.ndarray, original_shape: tuple[int, int],
+                 threshold=0.5) -> np.ndarray:
     """make the input image align, so it is a good image for input of vectorization
 
     Args:
-        bbox (tuple[int, int, int, int, float]): x1, y1, x2, y2, conf based on pixel for face. 
+        bbox (tuple[int, int, int, int, float]): x1, y1, x2, y2, conf based on pixel for face.
         image (np.ndarray): ,original image (not cropted face. the main raw input image)
         image_shape (tuple[int, int]): shape of input image, [height, width]
-        note: 
+        note:
 
     Returns:
         np.ndarray: alignmenet image
@@ -170,11 +171,11 @@ def do_align_dfa(bbox:tuple[int, int, int, int, float],
     x1, y1, x2, y2 = pad_bounding_box(x1, y1, x2, y2, original_shape, padding=0.5)
     face_crop = image[y1:y2, x1:x2, :]
     face_crop = preprocess(face_crop, size=(160, 160))
-    #will change to triton inside of mtcnn_step3_onnx
+    # will change to triton inside of mtcnn_step3_onnx
     bbox, landmark = dfa_triton(face_crop, threshold=threshold)
     if landmark is None or bbox is None:
         return None
-    
+
     try:
         warped_face = dfa_warp(face_crop, landmark=landmark)
     except Exception as e:
@@ -182,18 +183,19 @@ def do_align_dfa(bbox:tuple[int, int, int, int, float],
 
     return warped_face
 
+
 def do_align_dfa_oncrop(
-        # bbox:tuple[int, int, int, int, float], 
-             face_crop:np.ndarray,
-            #    original_shape:tuple[int, int], 
-             threshold=0.5) -> np.ndarray:
+        # bbox:tuple[int, int, int, int, float],
+        face_crop: np.ndarray,
+        #    original_shape:tuple[int, int],
+        threshold=0.5) -> np.ndarray:
     """make the input image align, so it is a good image for input of vectorization
 
     Args:
-        bbox (tuple[int, int, int, int, float]): x1, y1, x2, y2, conf based on pixel for face. 
+        bbox (tuple[int, int, int, int, float]): x1, y1, x2, y2, conf based on pixel for face.
         image (np.ndarray): ,original image (not cropted face. the main raw input image)
         image_shape (tuple[int, int]): shape of input image, [height, width]
-        note: 
+        note:
 
     Returns:
         np.ndarray: alignmenet image
@@ -203,11 +205,11 @@ def do_align_dfa_oncrop(
     # x1, y1, x2, y2 = pad_bounding_box(x1, y1, x2, y2, original_shape, padding=0.5)
     # face_crop = image[y1:y2, x1:x2, :]
     face_crop = preprocess(face_crop, size=(160, 160))
-    #will change to triton inside of mtcnn_step3_onnx
+    # will change to triton inside of mtcnn_step3_onnx
     bbox, landmark = dfa_triton(face_crop, threshold=threshold)
     if landmark is None or bbox is None:
         return None
-    
+
     try:
         warped_face = dfa_warp(face_crop, landmark=landmark)
     except Exception as e:
@@ -215,19 +217,20 @@ def do_align_dfa_oncrop(
 
     return warped_face
 
+
 def do_align_dfa_onbbxo(
-                        bbox:tuple[int, int, int, int], 
-                        image:np.ndarray,
-                        original_shape:tuple[int, int], 
-                        threshold=0.5,
-                        ) -> np.ndarray:
+        bbox: tuple[int, int, int, int],
+        image: np.ndarray,
+        original_shape: tuple[int, int],
+        threshold=0.5,
+) -> np.ndarray:
     """make the input image align, so it is a good image for input of vectorization
 
     Args:
-        bbox (tuple[int, int, int, int, float]): x1, y1, x2, y2, conf based on pixel for face. 
+        bbox (tuple[int, int, int, int, float]): x1, y1, x2, y2, conf based on pixel for face.
         image (np.ndarray): ,original image (not cropted face. the main raw input image)
         image_shape (tuple[int, int]): shape of input image, [height, width]
-        note: 
+        note:
 
     Returns:
         np.ndarray: alignmenet image
@@ -237,11 +240,11 @@ def do_align_dfa_onbbxo(
     x1, y1, x2, y2 = pad_bounding_box_symmetrically(x1, y1, x2, y2, original_shape, padding=0.5)
     face_crop = image[y1:y2, x1:x2, :]
     face_crop = preprocess(face_crop, size=(160, 160))
-    #will change to triton inside of mtcnn_step3_onnx
+    # will change to triton inside of mtcnn_step3_onnx
     bbox, landmark = dfa_triton(face_crop, threshold=threshold)
     if landmark is None or bbox is None:
         return None
-    
+
     try:
         warped_face = dfa_warp(face_crop, landmark=landmark)
     except Exception as e:

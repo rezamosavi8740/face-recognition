@@ -10,13 +10,14 @@ from ultralytics import YOLO
 # restore real stdout/stderr
 sys.stdout, sys.stderr = _old_stdout, _old_stderr
 
-TRITON_SERVER_URL = "localhost:{port_}".format(port_=8000)
+TRITON_SERVER_URL = "192.168.130.206:{port_}".format(port_=8000)
 name = f"http://{TRITON_SERVER_URL}"
 
-TRITON_MODEL_NAME =  "face_detection_small"  # Change this to match your deployed model name
+TRITON_MODEL_NAME =  "face_detection_small"  # Make sure this matches the model name deployed on Triton
 face_model_link = f"{name}/{TRITON_MODEL_NAME}"
-model = YOLO(face_model_link, task="detect")
 
+# Load model using Ultralytics with remote Triton endpoint
+model = YOLO(face_model_link, task="detect")
 def do_face_detect(image):
     results = model.predict(
         image,

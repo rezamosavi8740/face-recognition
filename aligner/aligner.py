@@ -39,7 +39,7 @@ def detect_and_align(img: "cv2.Mat") -> "cv2.Mat | None":
     Returns
     -------
     aligned_img : cv2.Mat | None
-        • Aligned face as a NumPy array (BGR) if everything succeeds  
+        • Aligned face as a NumPy array (BGR) if everything succeeds
         • None if no face found or alignment failed
     """
     # 1️⃣ Face detection → bounding-box (your detector’s format)
