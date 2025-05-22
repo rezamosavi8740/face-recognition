@@ -4,35 +4,35 @@ eval_every_n_epochs: 1
 
 per_epoch_evaluations:
   lfw:
-    path: "Download/facerec_val/lfw"
+    path: "face-recognition/facerec_val/lfw"
     evaluation_type: "verification"
     color_space: "RGB"
     batch_size: 128
     num_workers: 8
 
   agedb_30:
-    path: "Download/facerec_val/agedb_30"
+    path: "face-recognition/facerec_val/agedb_30"
     evaluation_type: "verification"
     color_space: "RGB"
     batch_size: 128
     num_workers: 8
 
   cfpfp:
-    path: "Download/facerec_val/cfp_fp"
+    path: "face-recognition/facerec_val/cfp_fp"
     evaluation_type: "verification"
     color_space: "RGB"
     batch_size: 128
     num_workers: 8
 
   cplfw:
-    path: "Download/facerec_val/cplfw"
+    path: "face-recognition/facerec_val/cplfw"
     evaluation_type: "verification"
     color_space: "RGB"
     batch_size: 128
     num_workers: 8
 
   calfw:
-    path: "Download/facerec_val/calfw"
+    path: "face-recognition/facerec_val/calfw"
     evaluation_type: "verification"
     color_space: "RGB"
     batch_size: 128
@@ -46,8 +46,8 @@ per_epoch_evaluations:
     num_workers: 8
 
   tinyface_eval:
-    path: "Download/facerec_val/tinyface_aligned_pad_0.1"
-    evaluation_type: "verification"
+    path: "face-recognition/facerec_val/tinyface_aligned_pad_0.1"
+    evaluation_type: "tinyface"
     color_space: "RGB"
     batch_size: 128
     num_workers: 8

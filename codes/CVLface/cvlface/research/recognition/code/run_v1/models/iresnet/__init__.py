@@ -1,6 +1,7 @@
 from ..base import BaseModel
 from .model import IR_101, IR_50, IR_18
 from torchvision import transforms
+from .iresnet101_spd import iresnet101_spd
 
 
 class IResNetModel(BaseModel):
@@ -29,6 +30,8 @@ class IResNetModel(BaseModel):
             net = IR_101(input_size=(112,112), output_dim=config.output_dim)
         elif config.name == 'ir18':
             net = IR_18(input_size=(112,112), output_dim=config.output_dim)
+        elif config.name == 'ir101_spd':
+            net = iresnet101_spd(input_size=(112, 112), output_dim=config.output_dim)
         else:
             raise NotImplementedError
 

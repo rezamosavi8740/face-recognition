@@ -136,7 +136,7 @@ if __name__ == '__main__':
     model, classifier = apply_peft(cfg.pefts, model=model, classifier=classifier, data_cfg=cfg.dataset, label_mapping=label_mapping)
 
     # === Freeze everything except block 48 ===
-    freeze_all_except_block(model, block_name="net.body.48")
+    #freeze_all_except_block(model, block_name="net.body.48")
 
     if cfg.trainers.using_wandb:
         wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
@@ -152,7 +152,7 @@ if __name__ == '__main__':
     print("\n=== Trainable layers after freezing ===")
     for name, param in model.named_parameters():
         if param.requires_grad:
-            print(name)
+            print("Name :"+str(name))
     print("=== End of trainable layers ===\n")
 
     # get optimizer

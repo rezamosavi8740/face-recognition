@@ -1,0 +1,6 @@
+input_size: [3, 112, 112]
+color_space: 'RGB'
+name: 'ir101_spd'
+output_dim: 512
+freeze: False
+start_from: "" 

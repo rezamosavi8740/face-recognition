@@ -2,7 +2,7 @@ defaults:
   - trainers: configs/default
   - optims: configs/cosine
   - pefts: configs/none
-  - models: iresnet/configs/v1_ir101
+  - models: iresnet/configs/v1_ir101_spd
   - classifiers: configs/fc
   - aligners: configs/none
   - dataset: configs/400k
