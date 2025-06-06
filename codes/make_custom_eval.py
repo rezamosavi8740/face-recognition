@@ -3,9 +3,9 @@ import random
 import csv
 import re
 from itertools import combinations
-import pandas as pd
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import pandas as pd
 from datasets import Dataset, Image
 
 def create_verification_csv(
@@ -46,43 +46,45 @@ def create_verification_csv(
                 person_to_images[person] = images
                 all_images.extend(images)
 
-    positive_pairs = []
-    for images in person_to_images.values():
-        pos_combinations = list(combinations(images, 2))
-        if one_positive_per_person:
-            pos_combinations = random.sample(pos_combinations, 1)
-        elif num_pairs_per_person is not None:
-            pos_combinations = random.sample(pos_combinations, min(num_pairs_per_person, len(pos_combinations)))
-        positive_pairs.extend(pos_combinations)
-
-    num_negative_pairs = int(len(positive_pairs) * negative_ratio)
-    negative_pairs = []
-    seen = set()
-    while len(negative_pairs) < num_negative_pairs:
-        img1, img2 = random.sample(all_images, 2)
-        if os.path.dirname(img1) != os.path.dirname(img2):
-            key = tuple(sorted([img1, img2]))
-            if key not in seen:
-                seen.add(key)
-                negative_pairs.append((img1, img2))
-
-    total_iters = len(positive_pairs)
-    if max_iters is not None:
-        total_iters = min(total_iters, max_iters)
+    seen_negatives = set()
+    negative_count = 0
+    positive_count = 0
+    max_positive = float("inf") if max_iters is None else max_iters
 
     with open(output_csv, "w", newline="") as csvfile:
         csvwriter = csv.writer(csvfile)
         csvwriter.writerow(["image1", "image2", "is_same"])
-        for pos_pair in tqdm(positive_pairs[:total_iters], desc="Writing Positive Pairs"):
-            csvwriter.writerow([pos_pair[0], pos_pair[1], True])
-        for neg_pair in tqdm(negative_pairs[:total_iters * negative_ratio], desc="Writing Negative Pairs"):
-            csvwriter.writerow([neg_pair[0], neg_pair[1], False])
+
+        for person, images in tqdm(person_to_images.items(), desc="Writing positive pairs"):
+            if positive_count >= max_positive:
+                break
+            pos_combinations = combinations(images, 2)
+            count = 0
+            for pair in pos_combinations:
+                csvwriter.writerow([pair[0], pair[1], True])
+                positive_count += 1
+                count += 1
+                if one_positive_per_person or (num_pairs_per_person and count >= num_pairs_per_person):
+                    break
+                if positive_count >= max_positive:
+                    break
+
+        target_negative = positive_count * negative_ratio
+        all_images_set = set(all_images)
+
+        while negative_count < target_negative:
+            img1, img2 = random.sample(all_images, 2)
+            if os.path.dirname(img1) != os.path.dirname(img2):
+                key = tuple(sorted([img1, img2]))
+                if key not in seen_negatives:
+                    seen_negatives.add(key)
+                    csvwriter.writerow([img1, img2, False])
+                    negative_count += 1
 
     print(f"\n✅ CSV file created at: {output_csv}")
-    print(f"Total pairs written: {total_iters + total_iters * negative_ratio}")
-    print(f"Positive pairs: {total_iters}")
-    print(f"Negative pairs: {total_iters * negative_ratio}")
-
+    print(f"Total pairs written: {positive_count + negative_count}")
+    print(f"Positive pairs: {positive_count}")
+    print(f"Negative pairs: {negative_count}")
 
 def create_verification_dataset(csv_path, image_dir):
     df = pd.read_csv(csv_path)
@@ -107,14 +109,12 @@ def create_verification_dataset(csv_path, image_dir):
     dataset = dataset.cast_column("image", Image())
     return dataset
 
-
-
 if __name__ == "__main__":
-    root_dir = "/home/user1/data/model/data/clean/eval_data"
-    output_csv = "/home/user1/newdata/eval_data/pairs.csv"
+    root_dir = "/home/user1/data/bank_1M_aug"
+    output_csv = "/home/user1/newdata/1M_bank_val/pairs.csv"
     num_pairs_per_person = 2
     negative_ratio = 2
-    max_iters = None
+    max_iters = None  # or set like 100000 for test
 
     create_verification_csv(
         root_dir=root_dir,
@@ -128,4 +128,4 @@ if __name__ == "__main__":
     )
 
     dataset = create_verification_dataset(output_csv, root_dir)
-    dataset.save_to_disk("/home/user1/newdata/eval_data")
+    dataset.save_to_disk("/home/user1/newdata/1M_bank_val")
