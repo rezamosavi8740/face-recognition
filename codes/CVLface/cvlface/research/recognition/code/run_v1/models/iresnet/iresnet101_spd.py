@@ -1,27 +1,24 @@
-# ✅ ResNet101 variant with BlurPool downsampling + SE attention
-# هدف: بهبود تشخیص چهره low-resolution (مثل TinyFace)
-
 import torch
 import torch.nn as nn
 from typing import Optional
 
-# 🔹 BlurPool برای کاهش aliasing هنگام downsampling
 class BlurPool2D(nn.Module):
     def __init__(self, channels, filt_size=3, stride=2):
         super().__init__()
-        assert filt_size == 3, "Only filt_size=3 supported in this lightweight version."
+        assert stride == 2, "Only stride=2 is supported for attention downsampling."
         self.stride = stride
-        a = torch.tensor([1., 2., 1.])
-        filt = a[:, None] * a[None, :]
-        filt = filt / filt.sum()
-        self.register_buffer('filt', filt[None, None, :, :].repeat((channels, 1, 1, 1)))
-        self.pad = nn.ReplicationPad2d(1)
+        self.attn = nn.Sequential(
+            nn.Conv2d(channels, 1, kernel_size=7, padding=3, bias=False),
+            nn.Sigmoid()
+        )
+        self.down = nn.Conv2d(channels, channels, kernel_size=3, stride=2, padding=1, bias=False)
 
     def forward(self, x):
-        x = self.pad(x)
-        return nn.functional.conv2d(x, self.filt, stride=self.stride, groups=x.shape[1])
+        attn_map = self.attn(x)
+        x = x * attn_map
+        x = self.down(x)
+        return x
 
-# 🔹 SE attention
 class SqueezeExcite(nn.Module):
     def __init__(self, channels: int, reduction: int = 16):
         super().__init__()
@@ -37,7 +34,6 @@ class SqueezeExcite(nn.Module):
         w = self.fc(self.avg(x))
         return x * w
 
-# 🔹 Basic Residual Block + BlurPool + SE
 class BlurBasicBlock(nn.Module):
     expansion = 1
     def __init__(self, inplanes: int, planes: int, stride: int = 1, downsample: Optional[nn.Module] = None):
@@ -47,13 +43,8 @@ class BlurBasicBlock(nn.Module):
         self.conv1 = nn.Conv2d(inplanes, planes, 3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes, eps=1e-5)
         self.prelu = nn.PReLU(planes)
-
-        if stride == 2:
-            self.blur = BlurPool2D(planes)
-        else:
-            self.blur = None
+        self.blur = BlurPool2D(planes) if stride == 2 else None
         self.conv2 = nn.Conv2d(planes, planes, 3, stride=1, padding=1, bias=False)
-
         self.bn3 = nn.BatchNorm2d(planes, eps=1e-5)
         self.se = SqueezeExcite(planes)
         self.downsample = downsample
@@ -74,7 +65,6 @@ class BlurBasicBlock(nn.Module):
         out += identity
         return out
 
-# 🔹 ResNet101 with BlurPool + SE
 class IResNet_Blur(nn.Module):
     fc_scale = 7 * 7
     def __init__(self, block, layers, dropout: float = 0.0, num_features: int = 512):
@@ -128,8 +118,6 @@ class IResNet_Blur(nn.Module):
         x = self.fc(x)
         x = self.features(x)
         return x
-
-# 🔹 Builder
 
 def iresnet101_blur(input_size=(112, 112), output_dim: int = 512, dropout: float = 0.0, **kwargs):
     layers = [3, 13, 30, 3]

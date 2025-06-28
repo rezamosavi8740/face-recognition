@@ -3,7 +3,7 @@
 LIGHTING_TESTING=1 CUDA_VISIBLE_DEVICES=0 python train.py \
   trainers=configs/default.yaml \
   trainers.num_gpu=1 \
-  trainers.batch_size=186 \
+  trainers.batch_size=128 \
   trainers.gradient_acc=1 \
   trainers.num_workers=16 \
   trainers.precision='32-true' \
