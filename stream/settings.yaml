@@ -1,0 +1,28 @@
+dynamic_paths:
+  log: "logs/{stream_id}.log"
+
+public:
+  log_level: "INFO"
+
+vector_search:
+  url: http://192.168.130.18:19530
+  collection_name: gozar_60m_HNSW_M32_EF800
+
+database:
+  elasticsearch:
+    url: https://elastic:W=s_wUTYO2ueQHP5vHjj@192.168.130.54:9200
+    index: bina_system
+
+minio:
+  base_url: https://cdn-bavar.d.aiengines.ir
+  endpoint: cdn-bavar.d.aiengines.ir
+  access_key: EYNBWDN135FSQ03MI9LT
+  secret_key: CN0CjBqBQFR0YWvX3UvklpLTDRBpbsgYAznOJJyL
+  bucket: bina
+  object_name: 'process/{stream_id}/{dir_name}/{name}'
+  
+fr:
+  landmark: 0.85
+  face_detection: 0.3
+  face_surface: 550
+  looklike: 0.55
