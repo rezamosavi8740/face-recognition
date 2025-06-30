@@ -201,22 +201,6 @@ class Bina:
             self.frame_count +=1 
             self.prometheus["stream_up"].labels(stream_id=self.stream_id).set(1)
             
-           
-            # if self.frame_count % 100 == 0:
-            #     snapshot = tracemalloc.take_snapshot()
-            #     top_stats = snapshot.statistics("traceback")
-            #     if top_stats:
-            #         top_stat = top_stats[0]
-            #         size_mb = top_stat.size / (1024 * 1024)
-            #         bold = "\033[1m"
-            #         reset = "\033[0m"
-            #         print(f"\n\n{bold}[WARNING] High memory usage: {size_mb:.2f} MB{reset}\n\n")
-            #         for line in top_stat.traceback.format():
-            #             print(line)
-
-
-
-                        
 
 
             # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
