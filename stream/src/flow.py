@@ -314,15 +314,7 @@ class Bina:
             
             result["gender"] = gender_result["farsi_label"]
             result["gender_score"] = gender_result["score"]
-            if gender_result["label"] == 'female':
-                try:
-                    hijab_result = await asyncio.wait_for(self.triton_client_manager.infer(model_name=self.headhijab.name, raw_input=face_crop_padd), timeout=3*self.BATCH_TIMEOUT)
-                except asyncio.TimeoutError:
-                    self.logger.error(f"hijab_detection Triton timed out after {3*self.BATCH_TIMEOUT:.2f} seconds")
-                    continue
-                # hijab_result = await self.triton_client_manager.infer(model_name=self.headhijab.name, raw_input=face_crop_padd)
-                result["hijab"] = hijab_result["farsi_label"]
-                result["hijab_score"] = hijab_result["score"]
+
                 
             
             #push to network io, now resulst contains: bbox, keypoints, face_bbox, face_keypoints face_embeding
