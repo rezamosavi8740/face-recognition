@@ -35,6 +35,7 @@ class FaceCandidTrace:
         self.interval_frame_log = interval_frame_log
         self.fr_face_detection_th = CONFIG.fr.face_detection
         self.fr_face_surface_th = CONFIG.fr.face_surface
+        self.th_termostat = 0.00001
 
     def _should_log(self, current_frame):
         if (current_frame - self.last_log_frame) >= self.interval_frame_log:
@@ -56,18 +57,29 @@ class FaceCandidTrace:
                 )
             return False
         return True
+    
+    # def metric(self, result: dict ) -> bool:
+    #     return result["temp_face_score"]
+    
+    def metric(self, result: dict) -> bool:
+        x1, y1, x2, y2 = result["face_bbox"]
+        face_surface = (y2 - y1) * (x2 - x1)
+        face_surface = max(face_surface, 25000)
+        face_surface = face_surface / 25000
+        out = 0.3 * result["temp_face_score"] + 0.7 * face_surface
+        return out
 
     def add(self, track_id: int, result: dict) -> bool:
         if self.filter(result):
-            metric = result["temp_face_score"]
+            current_metric = self.metric(result)
             prev = self.queue.get(track_id, 0)
-            if (metric - 0.02) > prev:
-                self.queue.add(track_id, metric)
+            if (current_metric - self.th_termostat) > prev:
+                self.queue.add(track_id, current_metric)
                 return True
             frame_count = result["frame_count"]
             if self.logger and self._should_log(frame_count):
                 self.logger.info(
-                    f"Ignore (better seen before): now={metric - 0.02:.2f}, "
+                    f"Ignore (better seen before): now={current_metric - self.th_termostat:.2f}, "
                     f"history={prev:.2f}, track_id={result['track_id']} @ {frame_count}"
                 )
         return False
