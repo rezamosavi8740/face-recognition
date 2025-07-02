@@ -10,7 +10,7 @@ sys.path.append(os.path.join(root))
 import numpy as np
 np.bool = np.bool_  # fix bug for mxnet 1.9.1
 np.object = np.object_
-
+from torchvision import transforms
 import pandas as pd
 from models import get_model
 from aligners import get_aligner
@@ -66,7 +66,7 @@ if __name__ == '__main__':
     model.load_state_dict_from_path(os.path.join(args.ckpt_dir, 'model.pt'))
     train_transform = model.make_train_transform()
     test_transform = model.make_test_transform()
-    print(model)
+    #print(model)
 
     # maybe load aligner
     if os.path.exists(os.path.join(args.ckpt_dir, 'aligner.yaml')):
@@ -112,15 +112,33 @@ if __name__ == '__main__':
     eval_pipeline = pipeline_from_name(pipeline_name, model, aligner)
     eval_pipeline.integrity_check(dataset_color_space='RGB')
 
+    base_transform = eval_pipeline.make_test_transform()
+
+    need_resize = True
+    if isinstance(base_transform, transforms.Compose):
+        need_resize = not any(isinstance(t, transforms.Resize) for t in base_transform.transforms)
+
+    if need_resize:
+        eval_transform = transforms.Compose(
+            [transforms.Resize((112, 112))] + list(base_transform.transforms)
+        )
+    else:
+        eval_transform = base_transform
+
     # evaluation callbacks
     evaluators = []
     for name, info in eval_config.per_epoch_evaluations.items():
+        print("IN1")
         eval_data_path = os.path.join(eval_config.data_root, info.path)
+        print("IN2")
+        print(eval_data_path)
+        print("IN3")
         eval_type = info.evaluation_type
         eval_batch_size = info.batch_size
         eval_num_workers = info.num_workers
         evaluator = get_evaluator_by_name(eval_type=eval_type, name=name, eval_data_path=eval_data_path,
-                                          transform=eval_pipeline.make_test_transform(),
+                                          transform=eval_transform,
+                                          #transform=eval_pipeline.make_test_transform(),
                                           fabric=fabric, batch_size=eval_batch_size, num_workers=eval_num_workers)
         evaluator.integrity_check(info.color_space, eval_pipeline.color_space)
         evaluators.append(evaluator)

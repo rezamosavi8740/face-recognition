@@ -12,7 +12,7 @@ import numpy as np
 np.bool = np.bool_  # fix bug for mxnet 1.9.1
 np.object = np.object_
 np.float = np.float_
-
+from torchvision import transforms
 import pandas as pd
 import torch
 import config
@@ -192,6 +192,24 @@ if __name__ == '__main__':
     eval_pipeline = pipeline_from_name(cfg.pipelines.eval_pipeline_name, model, aligner)
     eval_pipeline.integrity_check(dataloader.dataset.color_space)
 
+
+    ### ADDD NEW
+
+    base_transform = eval_pipeline.make_test_transform()
+
+    need_resize = True
+    if isinstance(base_transform, transforms.Compose):
+        need_resize = not any(isinstance(t, transforms.Resize) for t in base_transform.transforms)
+
+    if need_resize:
+        eval_transform = transforms.Compose(
+            [transforms.Resize((112, 112))] + list(base_transform.transforms)
+        )
+    else:
+        eval_transform = base_transform
+
+    ##END
+
     # evaluation callbacks
     evaluators = []
     for name, info in cfg.evaluations.per_epoch_evaluations.items():
@@ -200,7 +218,8 @@ if __name__ == '__main__':
         eval_batch_size = info.batch_size * 4
         eval_num_workers = info.num_workers
         evaluator = get_evaluator_by_name(eval_type=eval_type, name=name, eval_data_path=eval_data_path,
-                                          transform=eval_pipeline.make_test_transform(),
+                                          #transform=eval_pipeline.make_test_transform(),
+                                          transform=eval_transform,
                                           fabric=fabric, batch_size=eval_batch_size, num_workers=eval_num_workers)
         evaluator.integrity_check(info.color_space, eval_pipeline.color_space)
         evaluator.config = info
