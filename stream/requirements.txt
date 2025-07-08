@@ -1,0 +1,11 @@
+dynaconf==3.2.11
+miniopy-async==1.23.1
+elasticsearch==8.17.1
+tritonclient[all]==2.58.0
+prometheus-client==0.22.1
+scipy==1.16.0
+pymilvus==2.5.10
+aiortc==1.13.0
+opencv-python-headless==4.11.0.86
+lap>=0.5.12
+PyTurboJPEG>=1.8.0
