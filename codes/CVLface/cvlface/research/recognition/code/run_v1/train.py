@@ -12,7 +12,7 @@ import numpy as np
 np.bool = np.bool_  # fix bug for mxnet 1.9.1
 np.object = np.object_
 np.float = np.float_
-from torchvision import transforms
+
 import pandas as pd
 import torch
 import config
@@ -42,13 +42,13 @@ from functools import partial
 from fabric.fabric import setup_dataloader_from_dataset
 
 # === FIXED FREEZE FUNCTION ===
-def freeze_all_except_block(model, block_names=["net.body.24","net.body.48"]):
+def freeze_all_except_block(model, block_name="net.body.48"):
     for name, param in model.named_parameters():
-        if any(block_name in name for block_name in block_names):
-            print(f"Kept trainable: {name}")
-        else:
+        if block_name not in name:
             param.requires_grad = False
-            print(f"Froze Layer: {name}")
+            print(f"Froze layer: {name}")
+        else:
+            print(f"Kept trainable: {name}")
 
 
 if __name__ == '__main__':
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     model, classifier = apply_peft(cfg.pefts, model=model, classifier=classifier, data_cfg=cfg.dataset, label_mapping=label_mapping)
 
     # === Freeze everything except block 48 ===
-    freeze_all_except_block(model, block_names=["net.body.24", "net.body.48"])
+    #freeze_all_except_block(model, block_name="net.body.48")
 
     if cfg.trainers.using_wandb:
         wandb_logger = WandbLogger(project=cfg.trainers.task, save_dir=cfg.trainers.output_dir,
@@ -152,7 +152,7 @@ if __name__ == '__main__':
     print("\n=== Trainable layers after freezing ===")
     for name, param in model.named_parameters():
         if param.requires_grad:
-            print(name)
+            print("Name :"+str(name))
     print("=== End of trainable layers ===\n")
 
     # get optimizer
@@ -192,24 +192,6 @@ if __name__ == '__main__':
     eval_pipeline = pipeline_from_name(cfg.pipelines.eval_pipeline_name, model, aligner)
     eval_pipeline.integrity_check(dataloader.dataset.color_space)
 
-
-    ### ADDD NEW
-
-    base_transform = eval_pipeline.make_test_transform()
-
-    need_resize = True
-    if isinstance(base_transform, transforms.Compose):
-        need_resize = not any(isinstance(t, transforms.Resize) for t in base_transform.transforms)
-
-    if need_resize:
-        eval_transform = transforms.Compose(
-            [transforms.Resize((112, 112))] + list(base_transform.transforms)
-        )
-    else:
-        eval_transform = base_transform
-
-    ##END
-
     # evaluation callbacks
     evaluators = []
     for name, info in cfg.evaluations.per_epoch_evaluations.items():
@@ -218,8 +200,7 @@ if __name__ == '__main__':
         eval_batch_size = info.batch_size * 4
         eval_num_workers = info.num_workers
         evaluator = get_evaluator_by_name(eval_type=eval_type, name=name, eval_data_path=eval_data_path,
-                                          #transform=eval_pipeline.make_test_transform(),
-                                          transform=eval_transform,
+                                          transform=eval_pipeline.make_test_transform(),
                                           fabric=fabric, batch_size=eval_batch_size, num_workers=eval_num_workers)
         evaluator.integrity_check(info.color_space, eval_pipeline.color_space)
         evaluator.config = info
@@ -244,6 +225,7 @@ if __name__ == '__main__':
     tic = time.time()
     epoch = train_pipeline.start_epoch
     for epoch in range(train_pipeline.start_epoch, cfg.optims.num_epoch):
+        train_pipeline.set_epoch(epoch)
         epoch_start_time = time.time()
         train_pipeline.train()
         set_epoch(dataloader, epoch, cfg)
