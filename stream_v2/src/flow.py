@@ -13,7 +13,7 @@ from src.monitor import metrics
 from src.mv_utils.on_tracks import FaceCandidTrace
 import sys
 # from deffcode import FFdecoder
-from src.mv_utils.load_stream import RTSPStream3 as RTSPStream
+from src.mv_utils.load_stream import RTSPStream as RTSPStream
 import time
 
 

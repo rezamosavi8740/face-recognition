@@ -1,0 +1,36 @@
+name: Build and Push FastAPI Binary
+
+on:
+  push:
+    branches:
+      - v2
+  pull_request:
+    branches:
+      - v2
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: https://git.d.aiengines.ir/actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: https://git.d.aiengines.ir/actions/setup-buildx-action@v3
+
+    - name: Login to Docker Registry
+      uses: https://git.d.aiengines.ir/actions/login-action@v3
+      with:
+        registry: ${{ secrets.REGISTRY_URL }}
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+
+    - name: Build and Push Docker image (buildx)
+      uses: https://git.d.aiengines.ir/actions/build-push-action@v6
+      with:
+        context: /workspace/bina/bina_system_online
+        push: true
+        tags: ${{ secrets.REGISTRY_URL }}/bina/stream:v2
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
