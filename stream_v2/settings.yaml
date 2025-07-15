@@ -23,8 +23,8 @@ minio:
   
 fr:
   landmark: 0.85
-  face_detection: 0.3
-  face_surface: 2000
+  face_detection: 0.2
+  face_surface: 1000
   looklike: 0.55
 
 small_pose: True
