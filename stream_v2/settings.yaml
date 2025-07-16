@@ -5,8 +5,8 @@ public:
   log_level: "INFO"
 
 vector_search:
-  url: http://192.168.130.206:19530
-  collection_name: gozar_60m_HNSW_M32_EF200
+  url: http://localhost:19530
+  collection_name: gozar_1m_HNSW_M128_EF1000
 
 database:
   elasticsearch:

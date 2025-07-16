@@ -253,6 +253,7 @@ class Bina:
                 except asyncio.TimeoutError:
                     break  # no more items in time
 
+
             # Unpack batch
             images, results = zip(*batch)
             self.logger.info(f"new batch in netio_pip_line: track_ids: {[result['track_id'] for result in results]}")
@@ -260,18 +261,22 @@ class Bina:
             # === 1. Vector search (batch) and ignore low looklikes ===
             embeddings = [r["face_embeding"] for r in results]
             vectors = np.stack(embeddings)
-            
-            
+
+
             # vector search
             with self.prometheus['inference_latency'].labels(self.stream_id, "vector_search").time():
                 try:
-                    search_results = await asyncio.wait_for(self.vs.do_search(vectors), timeout=3*self.BATCH_TIMEOUT)
+                    search_results = await asyncio.wait_for(self.vs.do_search(vectors), timeout=6*self.BATCH_TIMEOUT)
                 except asyncio.TimeoutError:
-                    self.logger.error(f"Search timed out after {3*self.BATCH_TIMEOUT:.2f} seconds")
+                    self.logger.error(f"Search timed out after {6*self.BATCH_TIMEOUT:.2f} seconds")
+                    print("❌")
                     continue
             self.prometheus['model_count'].labels(self.stream_id, "vector_search").inc()
 
+            print("✅")
+
             # del embeddings, vectors
+
             filtered_batch = []
             for (image, result), look_like in zip(batch, search_results):
                 if look_like[0]["score"] < self.fr_looklike_th:
@@ -318,6 +323,7 @@ class Bina:
                 upload_tasks.append(asyncio.create_task(self._upload_task(body_crop, fc, result, "body")))
 
             # === Run all upload tasks concurrently and safely assign links ===
+
             
             with self.prometheus['inference_latency'].labels(self.stream_id, "minio_upload").time():
                 try:
@@ -349,7 +355,8 @@ class Bina:
             self.prometheus['model_count'].labels(self.stream_id, "profile_upload").inc()
 
             self.logger.info(f"uploaded well:  track_ids: {[result['track_id'] for result in results]} :  @ {[result['frame_count'] for result in results]}\nface_links={[result['face_link'] for result in results]}\n")
-    
+
+
     async def _upload_task(self, image, frame_num, res, dir_name):
         res[f"{dir_name}_link"] = await self.minio.upload_image(image=image, frame_num=frame_num, dir_name=dir_name)
 
