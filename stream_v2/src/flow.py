@@ -14,6 +14,7 @@ from src.mv_utils.on_tracks import FaceCandidTrace
 import sys
 # from deffcode import FFdecoder
 from src.mv_utils.load_stream import RTSPStream as RTSPStream
+from src.network_io.identity_manager import IdentityManager
 import time
 
 
@@ -37,6 +38,7 @@ class Bina:
         self.prometheus["stream_up"].labels(stream_id=self.stream_id).set(0)
         self.BATCH_TIMEOUT = 1  # seconds
         self.BATCH_MAX_SIZE = 20   # maximum items in one batch
+        self.track_vectors = defaultdict(lambda: deque(maxlen=3))
 
         self.logger = setup_logger(log_file=CONFIG.dynamic_paths.log, 
                                    name=self.stream_id)
@@ -72,6 +74,11 @@ class Bina:
         self.elastic = ElasticClient(logger=self.logger)
         self.candid_trace = FaceCandidTrace(logger=self.logger)
         self.face_bank = FaceBank(max_size=20, similarity_threshold=0.28)
+
+        self.identity_manager = IdentityManager(
+            milvus_client=self.vs.async_client,
+            collection_name=self.vs.COLLECTION_NAME
+        )
         
         self.frame_count = 0
         # ffparams = {"-rtsp_transport": "tcp"}
@@ -137,6 +144,13 @@ class Bina:
             if not results:
                 continue
             results = self.tracker.update(results, image.shape[:2], image.shape[:2])
+
+            #delete vector Que
+            current_ids = set(det["track_id"] for det in results)
+            all_ids = set(self.track_vectors.keys())
+            for old_id in all_ids - current_ids:
+                del self.track_vectors[old_id]
+
             self.prometheus['model_count'].labels(self.stream_id, "face_detection").inc()
 
             # for det in results:
@@ -203,6 +217,7 @@ class Bina:
             # embedding = await self.triton_client_manager.infer(model_name=self.face_embeding.name, raw_input=img_face_warped)
             # vector search
             result["face_embeding"] = embedding
+            self.track_vectors[result["track_id"]].append(embedding)
             result["unique_id"], result["unique_cosine"], result["similar_to"] = self.face_bank.query(embedding)
             
             #gender and hijab on head: 
@@ -280,14 +295,18 @@ class Bina:
             filtered_batch = []
             for (image, result), look_like in zip(batch, search_results):
                 if look_like[0]["score"] < self.fr_looklike_th:
+
                     self.logger.info(
                         f"ignore instance, low looklike th {look_like[0]['score']:.4f} : "
                         f"track_id={result['track_id']} @ {result['frame_count']}"
                     )
                     continue
+
                 result["looklike"] = look_like
                 result.pop("face_embeding", None)
                 filtered_batch.append((image, result))
+
+
 
             if not filtered_batch:
                 for image, result in batch:
@@ -356,7 +375,36 @@ class Bina:
 
             self.logger.info(f"uploaded well:  track_ids: {[result['track_id'] for result in results]} :  @ {[result['frame_count'] for result in results]}\nface_links={[result['face_link'] for result in results]}\n")
 
+            with self.prometheus['inference_latency'].labels(self.stream_id, "profile_upload").time():
+                try:
+                    await asyncio.wait_for(
+                        self.elastic.upload_profiles(results, self.stream_id),
+                        timeout=3 * self.BATCH_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.error(f"profile upload timed out after {3 * self.BATCH_TIMEOUT:.2f} seconds")
+                    continue
+
+            #  Insert valid embeddings into Milvus
+            for _, result in filtered_batch:
+                embedding_list = result.get("embedding_history", [])
+                if not embedding_list:
+                    continue
+
+                # Try identity from existing fields
+                identity_id = result.get("identity_id")
+                if identity_id is None:
+                    identity_id = result.get("looklike", [{}])[0].get("id")
+
+                # If not found or doesn't exist in Milvus, create new
+                if identity_id is None or not await self.identity_manager.identity_exists(identity_id):
+                    identity_id = await self.identity_manager.get_next_identity_id()
+
+                # Optional: store assigned ID for logging or later use
+                result["identity_id"] = identity_id
+
+                # Insert embeddings to Milvus
+                await self.identity_manager.insert_identity_vectors(identity_id, embedding_list)
 
     async def _upload_task(self, image, frame_num, res, dir_name):
         res[f"{dir_name}_link"] = await self.minio.upload_image(image=image, frame_num=frame_num, dir_name=dir_name)
-
