@@ -5,6 +5,7 @@ from datetime import datetime
 from src.config import CONFIG
 from turbojpeg import TurboJPEG, TJPF_BGR, TJSAMP_444
 import uuid
+import os
 
 
 class MinioImageUploader:
@@ -15,7 +16,10 @@ class MinioImageUploader:
         self.object_template = config.minio.object_name
         self.logger = logger
         self.jpeg = TurboJPEG()
-        
+
+        # --- NEW ---
+        # It is recommended to move this to your CONFIG file
+        self.local_storage_path = "/home/user3"
 
         self.client = Minio(
             endpoint=config.minio.endpoint,
@@ -24,18 +28,6 @@ class MinioImageUploader:
             secure=config.minio.base_url.startswith("https://")
         )
 
-    # @staticmethod
-    # def encode_image(self, image, quality=90):
-    #     """
-    #     Encode a BGR image (OpenCV format) to JPEG using OpenCV.
-    #     Returns a BytesIO stream.
-    #     """
-    #     success, encoded_image = cv2.imencode('.jpg', image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
-    #     if not success:
-    #         raise ValueError("Failed to encode image with OpenCV")
-    #     return BytesIO(encoded_image.tobytes())
-
-    # @staticmethod
     def encode_image(self, image, quality=90):
         """
         Encode a BGR image to JPEG using TurboJPEG.
@@ -48,15 +40,15 @@ class MinioImageUploader:
             image,
             quality=quality,
             pixel_format=TJPF_BGR,
-            jpeg_subsample=TJSAMP_444  # you can also use TJSAMP_420 for better compression
+            jpeg_subsample=TJSAMP_444
         )
         return BytesIO(encoded_image)
-    
+
     async def upload_image(self, image, frame_num: int,
-                           dir_name: str) -> str | None:
+                           dir_name: str) -> tuple[str | None, str | None]:
         """
-        Encode and upload an image to MinIO.
-        Returns the public image URL or None if an error occurred.
+        Encode and upload an image to MinIO and save it locally.
+        Returns a tuple containing the public image URL and the local file path.
         """
         now_time_str = datetime.now().strftime("%Y%m%d%H%M%S")
         unique_id = uuid.uuid4().hex
@@ -68,22 +60,39 @@ class MinioImageUploader:
             name=name,
         )
 
-        try:
-            # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = image[..., ::-1]
-            image = self.encode_image(image)
-            data_length = len(image.getvalue())
-            image.seek(0)
+        # --- NEW: Define local path ---
+        local_file_path = os.path.join(self.local_storage_path, object_name)
+        image_url = None
 
+        try:
+            image_data = self.encode_image(image[..., ::-1])
+            data_length = len(image_data.getvalue())
+            image_data.seek(0)
+
+            # --- NEW: Save the image locally ---
+            try:
+                # Create the directory if it does not exist
+                os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+                with open(local_file_path, 'wb') as f:
+                    f.write(image_data.getvalue())
+                if self.logger:
+                    self.logger.info(f"Successfully saved image to local path: {local_file_path}")
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"Failed to save image locally to {local_file_path}: {e}")
+                local_file_path = None  # Set to None if saving failed
+
+            # --- Existing MinIO Upload Logic ---
+            image_data.seek(0)  # Reset pointer for MinIO upload
             res = await self.client.put_object(
                 bucket_name=self.bucket_name,
                 object_name=object_name,
-                data=image,
+                data=image_data,
                 length=data_length,
                 content_type='image/jpeg',
             )
             image_url = f"{self.base_url}/{res.bucket_name}/{res.object_name}"
-            return image_url
+
         except S3Error as e:
             if self.logger:
                 self.logger.exception(f"S3 Error: {e}")
@@ -93,4 +102,4 @@ class MinioImageUploader:
         finally:
             del image  # 🔍 Ensures buffers are freed
 
-        return None
+        return image_url, local_file_path
