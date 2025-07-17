@@ -117,7 +117,7 @@ class Bina:
 
     async def pose_worker(self,):
         while True:
-            print("pose")
+            #print("pose")
 
             if time.time() - self.latest_frame_read_time > 120:
                 self.logger.error(f"No valid frame received on stream {self.stream_id}. EXIT")
@@ -189,7 +189,7 @@ class Bina:
 
     async def head_worker(self,):
         while True:
-            print("head")
+            #print("head")
             if self.head_queue.full():
                 self.logger.error("head_queue is full! Exiting.")
                 sys.exit(1)
@@ -422,13 +422,24 @@ class Bina:
                         task.cancel()
                     await asyncio.gather(*upload_tasks, return_exceptions=True)
                     continue
-            frame_link_frame_count = {}
-            for result in results:
-                if result.get("frame_link"):
-                    frame_link_frame_count[result["frame_count"]] = result["frame_link"]
+
+            frame_link_frame_count = {
+                result["frame_count"]: result["frame_link"]
+                for result in results
+                if result.get("frame_link")
+            }
+
             for result in results:
                 if not result.get("frame_link"):
-                    result["frame_link"] = frame_link_frame_count[result["frame_count"]]
+                    fc = result["frame_count"]
+                    if fc not in frame_link_frame_count:
+                        self.logger.warning(
+                            f"Missing frame_link for frame_count={fc}, track_id={result.get('track_id')}"
+                        )
+                        result["frame_link"] = "N/A"
+                    else:
+                        result["frame_link"] = frame_link_frame_count[fc]
+
             self.prometheus['model_count'].labels(self.stream_id, "minio_upload").inc()
 
             print("5✅")
@@ -443,8 +454,10 @@ class Bina:
                     continue
             self.prometheus['model_count'].labels(self.stream_id, "profile_upload").inc()
 
-            self.logger.info(f"uploaded well:  track_ids: {[result['track_id'] for result in results]} :  @ {[result['frame_count'] for result in results]}\nface_links={[result['face_link'] for result in results]}\n")
-
+            face_links = [result.get("face_link", "N/A") for result in results]
+            self.logger.info(
+                f"uploaded well:  track_ids: {[result['track_id'] for result in results]} :  @ {[result['frame_count'] for result in results]}\nface_links={face_links}\n"
+            )
             with self.prometheus['inference_latency'].labels(self.stream_id, "profile_upload").time():
                 try:
                     await asyncio.wait_for(
@@ -467,7 +480,8 @@ class Bina:
                 # Try identity from existing fields
                 identity_id = result.get("identity_id")
                 if identity_id is None:
-                    identity_id = result.get("looklike", [{}])[0].get("id")
+                    looklike = result.get("looklike") or [{}]
+                    identity_id = looklike[0].get("id")
 
                 # If not found or doesn't exist in Milvus, create new
                 if identity_id is None or not await self.identity_manager.identity_exists(identity_id):
