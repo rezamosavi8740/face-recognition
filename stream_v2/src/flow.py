@@ -385,30 +385,57 @@ class Bina:
 
             print("3✅")
 
+            #  === Insert valid embeddings into Milvus
+            for _, result in filtered_batch:
+                embedding_list = result.get("embedding_history", [])
+                if not embedding_list:
+                    continue
+
+                # Try identity from existing fields
+                identity_id = result.get("identity_id")
+                if identity_id is None:
+                    looklike = result.get("looklike") or [{}]
+                    identity_id = looklike[0].get("id")
+
+                # If not found or doesn't exist in Milvus, create new
+                if identity_id is None or not await self.identity_manager.identity_exists(identity_id):
+                    identity_id = await self.identity_manager.get_next_identity_id()
+
+                # Optional: store assigned ID for logging or later use
+                result["identity_id"] = identity_id
+
+                # Insert embeddings to Milvus
+                print("last✅")
+
+                await self.identity_manager.insert_identity_vectors(identity_id, embedding_list)
+
+
+
             # === 2. MinIO uploads: assign links directly ===
             frame_uploaded = set()
             upload_tasks = []
             for image, result in filtered_batch:
             # for image, result in zip(images, results):
                 fc = result["frame_count"]
+                identity_id = result.get("identity_id", "unknown")
 
                 # --- Upload full frame once per frame count ---
                 if fc not in frame_uploaded:
-                    upload_tasks.append(asyncio.create_task(self._upload_task(image, fc, result, "frame")))
+                    upload_tasks.append(asyncio.create_task(self._upload_task(image, fc, result, f"frame/id{identity_id}")))
                     frame_uploaded.add(fc)
 
                 # --- Upload face crop ---
                 x1, y1, x2, y2 = result["face_bbox"]
                 face_crop = image[y1:y2, x1:x2, ...]
 
-                upload_tasks.append(asyncio.create_task(self._upload_task(face_crop, fc, result, "face")))
+                upload_tasks.append(asyncio.create_task(self._upload_task(face_crop, fc, result, f"face/id_{identity_id}")))
 
                 # --- Upload body crop ---
                 x1b, y1b, x2b, y2b = result["bbox"]
                 body_crop = image[y1b:y2b, x1b:x2b, ...]
 
 
-                upload_tasks.append(asyncio.create_task(self._upload_task(body_crop, fc, result, "body")))
+                upload_tasks.append(asyncio.create_task(self._upload_task(body_crop, fc, result, f"body/id_{identity_id}")))
 
             # === Run all upload tasks concurrently and safely assign links ===
 
@@ -471,31 +498,6 @@ class Bina:
 
             print("6✅")
 
-
-            #  Insert valid embeddings into Milvus
-            for _, result in filtered_batch:
-                embedding_list = result.get("embedding_history", [])
-                if not embedding_list:
-                    continue
-
-                # Try identity from existing fields
-                identity_id = result.get("identity_id")
-                if identity_id is None:
-                    looklike = result.get("looklike") or [{}]
-                    identity_id = looklike[0].get("id")
-
-                # If not found or doesn't exist in Milvus, create new
-                if identity_id is None or not await self.identity_manager.identity_exists(identity_id):
-                    identity_id = await self.identity_manager.get_next_identity_id()
-
-                # Optional: store assigned ID for logging or later use
-                result["identity_id"] = identity_id
-
-                # Insert embeddings to Milvus
-                print("last✅")
-
-                await self.identity_manager.insert_identity_vectors(identity_id, embedding_list)
-
-
+            
     async def _upload_task(self, image, frame_num, res, dir_name):
         res[f"{dir_name}_link"] = await self.minio.upload_image(image=image, frame_num=frame_num, dir_name=dir_name)

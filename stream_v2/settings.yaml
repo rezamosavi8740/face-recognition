@@ -22,7 +22,7 @@ minio:
     shared-user3: UterhLoQXXEc+Ri6+XRYEl
   secret_key: CN0CjBqBQFR0YWvX3UvklpLTDRBpbsgYAznOJJyL
   bucket: ai-shared
-  object_name: 'process/{stream_id}/{dir_name}/{name}'
+  object_name: 'process/{stream_id}/{dir_name}/{name}' # dir_name: [face|frame|body]/id_{identity_id}/}
 
 
 fr:
