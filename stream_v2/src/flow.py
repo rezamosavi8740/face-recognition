@@ -15,6 +15,7 @@ import sys
 # from deffcode import FFdecoder
 from src.mv_utils.load_stream import RTSPStream as RTSPStream
 from src.network_io.identity_manager import IdentityManager
+# from src.network_io.face_session import FaceSession, SessionManager
 import time
 from collections import defaultdict, deque
 

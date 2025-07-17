@@ -16,11 +16,15 @@ database:
 minio:
   base_url: https://cdn-bavar.d.aiengines.ir
   endpoint: cdn-bavar.d.aiengines.ir
-  access_key: EYNBWDN135FSQ03MI9LT
+  access_key: 
+    shared-user1: I3NUOzimJFo6qsKCfWFeSQ
+    shared-user2: YBljhNUfjuByuw90dlXR9OQ00
+    shared-user3: UterhLoQXXEc+Ri6+XRYEl
   secret_key: CN0CjBqBQFR0YWvX3UvklpLTDRBpbsgYAznOJJyL
-  bucket: bina
+  bucket: ai-shared
   object_name: 'process/{stream_id}/{dir_name}/{name}'
-  
+
+
 fr:
   landmark: 0.85
   face_detection: 0.2
