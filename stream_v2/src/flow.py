@@ -16,7 +16,7 @@ import sys
 from src.mv_utils.load_stream import RTSPStream as RTSPStream
 from src.network_io.identity_manager import IdentityManager
 import time
-
+from collections import defaultdict, deque
 
 class Bina:
     def __init__(self):
@@ -74,6 +74,8 @@ class Bina:
         self.elastic = ElasticClient(logger=self.logger)
         self.candid_trace = FaceCandidTrace(logger=self.logger)
         self.face_bank = FaceBank(max_size=20, similarity_threshold=0.28)
+
+        await self.vs.init_client()
 
         self.identity_manager = IdentityManager(
             milvus_client=self.vs.async_client,
@@ -149,6 +151,18 @@ class Bina:
             current_ids = set(det["track_id"] for det in results)
             all_ids = set(self.track_vectors.keys())
             for old_id in all_ids - current_ids:
+                vectors = list(self.track_vectors[old_id])
+
+                dummy_result = {
+                    "track_id": old_id,
+                    "embedding_history": vectors,
+                    "frame_count": self.frame_count,
+                    "bbox": [0, 0, 0, 0],
+                }
+                dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+                await self.netio_queue.put((dummy_image, dummy_result))
+
                 del self.track_vectors[old_id]
 
             self.prometheus['model_count'].labels(self.stream_id, "face_detection").inc()
@@ -271,10 +285,12 @@ class Bina:
 
             # Unpack batch
             images, results = zip(*batch)
+            filtered_batch = []
             self.logger.info(f"new batch in netio_pip_line: track_ids: {[result['track_id'] for result in results]}")
 
             # === 1. Vector search (batch) and ignore low looklikes ===
-            embeddings = [r["face_embeding"] for r in results]
+            #embeddings = [r["face_embeding"] for r in filtered_batch]
+            embeddings = [r["face_embeding"] for _, r in filtered_batch]
             vectors = np.stack(embeddings)
 
 
@@ -288,12 +304,23 @@ class Bina:
                     continue
             self.prometheus['model_count'].labels(self.stream_id, "vector_search").inc()
 
-            print("✅")
+            print("1✅")
 
             # del embeddings, vectors
 
             filtered_batch = []
             for (image, result), look_like in zip(batch, search_results):
+                if not look_like:
+                    # No result found – handle accordingly (e.g., skip or log)
+                    result["looklike"] = []
+                    result["identity_id"] = None
+                    filtered_batch.append((image, result))
+                    self.logger.info(
+                        f"No similar identity found: track_id={result['track_id']} @ {result['frame_count']}"
+                    )
+
+                    continue
+
                 if look_like[0]["score"] < self.fr_looklike_th:
 
                     self.logger.info(
@@ -307,14 +334,26 @@ class Bina:
                 filtered_batch.append((image, result))
 
 
-
+            print("2✅")
+            """
             if not filtered_batch:
                 for image, result in batch:
                     del image
                     result.clear()
                 del batch
                 continue
+            """
+            if not filtered_batch:
+                filtered_batch = [
+                    (image, result) for image, result in batch
+                    if "embedding_history" in result and result["embedding_history"]
+                ]
+                if not filtered_batch:
+                    continue
 
+            print("3✅")
+
+            print("3✅")
 
             # === 2. MinIO uploads: assign links directly ===
             frame_uploaded = set()
@@ -343,7 +382,8 @@ class Bina:
 
             # === Run all upload tasks concurrently and safely assign links ===
 
-            
+            print("4✅")
+
             with self.prometheus['inference_latency'].labels(self.stream_id, "minio_upload").time():
                 try:
                     await asyncio.wait_for(asyncio.gather(*upload_tasks), timeout=5 * self.BATCH_TIMEOUT)
@@ -362,7 +402,8 @@ class Bina:
                     result["frame_link"] = frame_link_frame_count[result["frame_count"]]
             self.prometheus['model_count'].labels(self.stream_id, "minio_upload").inc()
             
-            
+            print("5✅")
+
             
             # now upload profiles here
             with self.prometheus['inference_latency'].labels(self.stream_id, "profile_upload").time():
@@ -385,6 +426,9 @@ class Bina:
                     self.logger.error(f"profile upload timed out after {3 * self.BATCH_TIMEOUT:.2f} seconds")
                     continue
 
+            print("6✅")
+
+
             #  Insert valid embeddings into Milvus
             for _, result in filtered_batch:
                 embedding_list = result.get("embedding_history", [])
@@ -404,7 +448,10 @@ class Bina:
                 result["identity_id"] = identity_id
 
                 # Insert embeddings to Milvus
+                print("last✅")
+
                 await self.identity_manager.insert_identity_vectors(identity_id, embedding_list)
+
 
     async def _upload_task(self, image, frame_num, res, dir_name):
         res[f"{dir_name}_link"] = await self.minio.upload_image(image=image, frame_num=frame_num, dir_name=dir_name)

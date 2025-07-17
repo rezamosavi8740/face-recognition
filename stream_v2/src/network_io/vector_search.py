@@ -9,6 +9,11 @@ class MilvousSearch:
         self.TOP_K           = 5
         self.has_loaded = False
 
+    async def init_client(self):
+        if not hasattr(self, "async_client"):
+            self.async_client = AsyncMilvusClient(uri=self.MILVUS_URL, token="root:Milvus")
+            await self.load_my_collection()
+
 
     async def load_my_collection(self,):
         await self.async_client.load_collection(self.COLLECTION_NAME)
@@ -44,7 +49,8 @@ class MilvousSearch:
                 # param={"metric_type": "COSINE", "params": {"ef": 128}},
                 limit= self.TOP_K,
                 # expr=None,
-                output_fields=["identity_id", "url"]
+                #output_fields=["identity_id", "url"]
+                output_fields=["identity_id"]
             )
             # out = {count:self._display_search_results(result) for count, result in enumerate(results)}
             out = [self._display_search_results(result) for  result in results]

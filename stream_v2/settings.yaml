@@ -6,7 +6,7 @@ public:
 
 vector_search:
   url: http://localhost:19530
-  collection_name: gozar_1m_HNSW_M128_EF1000
+  collection_name: test_collection
 
 database:
   elasticsearch:
