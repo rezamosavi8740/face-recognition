@@ -36,6 +36,9 @@ class ElasticClient:
                 }
             })
 
+        looklike = profile.get("looklike") or [{}]
+        top_match = looklike[0]
+
         doc_body = {
             "created_at": datetime.now(timezone.utc).isoformat(),
             "is_stream": True,
@@ -47,9 +50,9 @@ class ElasticClient:
             "body_url": profile.get("body_link"),
             "face_url": profile.get("face_link"),
             "best_match": {
-                "conf": profile.get("looklike", [{}])[0].get("score", 0.0),
-                "url": profile.get("looklike", [{}])[0].get("url", " "),
-                "identity_id": profile.get("looklike", [{}])[0].get("id", " "),
+                "conf": top_match.get("score", 0.0),
+                "url": top_match.get("url", " "),
+                "identity_id": top_match.get("id", " "),
             },
             "face_box": list(profile.get("face_bbox", [])),
             "face_conf": profile.get("face_score"),
