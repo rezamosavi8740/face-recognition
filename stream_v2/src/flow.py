@@ -1,7 +1,7 @@
 import asyncio
 from src.config import CONFIG, setup_logger, format_with_stars
 from src.triton.client import TritonModelManager, TritonModel
-from src.mv_utils.on_head import  face_box_extract, face_warp, face_padd, summarize_keypoints 
+from src.mv_utils.on_head import  face_box_extract, face_warp, face_padd, summarize_keypoints
 from src.triton.funcs import FaceAllignment, FaceEmbeding, PoseDetection, HeadGender, HeadHijab
 import numpy as np
 from src.tracker.bytetracker import BYTETracker, Args
@@ -9,7 +9,7 @@ from src.network_io.vector_search import MilvousSearch
 from src.network_io.media_upload import MinioImageUploader
 from src.network_io.profile_upload import ElasticClient
 from src.mv_utils.vector_cluster import FaceBank
-from src.monitor import metrics 
+from src.monitor import metrics
 from src.mv_utils.on_tracks import FaceCandidTrace
 import sys
 # from deffcode import FFdecoder
@@ -39,18 +39,19 @@ class Bina:
         self.BATCH_TIMEOUT = 1  # seconds
         self.BATCH_MAX_SIZE = 20   # maximum items in one batch
         self.track_vectors = defaultdict(lambda: deque(maxlen=3))
+        self.track_frames = defaultdict(lambda: deque(maxlen=3))
 
-        self.logger = setup_logger(log_file=CONFIG.dynamic_paths.log, 
+        self.logger = setup_logger(log_file=CONFIG.dynamic_paths.log,
                                    name=self.stream_id)
         self.logger.info(format_with_stars("< Welcome to Realtime BinaSystem >", width=80, sign="&"))
         self.logger.info(format_with_stars(self.stream_url, width=80, sign=" "))
         self.logger.info(80*"&")
 
-        
+
     @classmethod
     async def create(cls):
-        self = cls()  
-    
+        self = cls()
+
         url = CONFIG.STREAM_URL
         self.triton_client_manager = await TritonModelManager.get_instance()
 
@@ -68,7 +69,7 @@ class Bina:
 
         self.headhijab = HeadHijab()
         self.register_model(self.headhijab)
-        
+
         self.vs = MilvousSearch()
         self.minio = MinioImageUploader()
         self.elastic = ElasticClient(logger=self.logger)
@@ -81,19 +82,19 @@ class Bina:
             milvus_client=self.vs.async_client,
             collection_name=self.vs.COLLECTION_NAME
         )
-        
+
         self.frame_count = 0
         # ffparams = {"-rtsp_transport": "tcp"}
         # self.reader = FFdecoder(url, frame_format="rgb24", verbose=False, **ffparams).formulate()
         self.loader = RTSPStream(url)
-        
+
         self.head_queue = asyncio.Queue(maxsize=100)
         self.netio_queue = asyncio.Queue(maxsize=150)
         self.latest_frame_read_time = time.time()
-        
+
         return self
-    
-    
+
+
     def register_model(self, model_obj):
         self.triton_client_manager.register_model(TritonModel(
                                                                 name=model_obj.name,
@@ -102,20 +103,22 @@ class Bina:
                                                                 pre_process=model_obj.preprocess,
                                                                 post_process=model_obj.postprocess,
                                                             ))
-    
-    
+
+
     async def inference(self):
         tasks = [
             asyncio.create_task(self.pose_worker()),
             asyncio.create_task(self.head_worker()),
             asyncio.create_task(self.netio_worker()),
         ]
-    
 
-        await asyncio.gather(*tasks) 
-    
+
+        await asyncio.gather(*tasks)
+
     async def pose_worker(self,):
         while True:
+            print("pose")
+
             if time.time() - self.latest_frame_read_time > 120:
                 self.logger.error(f"No valid frame received on stream {self.stream_id}. EXIT")
                 sys.exit(1)
@@ -133,9 +136,9 @@ class Bina:
                 # break
             self.latest_frame_read_time = time.time()
             self.prometheus['frame_count'].labels(self.stream_id).inc()
-            self.frame_count +=1 
+            self.frame_count +=1
             self.prometheus["stream_up"].labels(stream_id=self.stream_id).set(1)
-            
+
             with self.prometheus['inference_latency'].labels(self.stream_id, "face_detection").time():
                 try:
                     results = await asyncio.wait_for(self.triton_client_manager.infer(model_name=self.posedetection.name, raw_input=image), timeout=3*self.BATCH_TIMEOUT)
@@ -151,31 +154,29 @@ class Bina:
             current_ids = set(det["track_id"] for det in results)
             all_ids = set(self.track_vectors.keys())
             for old_id in all_ids - current_ids:
-                vectors = list(self.track_vectors[old_id])
+                frames_and_results = list(self.track_frames[old_id])
+                embeddings = list(self.track_vectors[old_id])
 
-                dummy_result = {
-                    "track_id": old_id,
-                    "embedding_history": vectors,
-                    "frame_count": self.frame_count,
-                    "bbox": [0, 0, 0, 0],
-                }
-                dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
-
-                await self.netio_queue.put((dummy_image, dummy_result))
+                # Attach embedding history to last result only
+                if frames_and_results:
+                    image, result = frames_and_results[-1]
+                    result["embedding_history"] = embeddings
+                    await self.netio_queue.put((image, result))
 
                 del self.track_vectors[old_id]
+                del self.track_frames[old_id]
 
             self.prometheus['model_count'].labels(self.stream_id, "face_detection").inc()
 
             # for det in results:
             #     print(f"ID {det['track_id']} at bbox {det['bbox']} with score {det['score']:.2f}")
             # for each id_track must specify wether it has face? better than its historic data? so if yes so send to recognition(head) queue
-            
+
             for result in results:
                 face_bbox, face_score = face_box_extract(result["keypoints"], result["bbox"])
                 if face_bbox is None:
                     continue
-                
+
                 result["face_bbox"] = face_bbox
                 result["frame_count"] = self.frame_count
                 result["temp_face_score"] = face_score
@@ -185,9 +186,10 @@ class Bina:
                     await self.head_queue.put((image, result))
 
 
-            
+
     async def head_worker(self,):
         while True:
+            print("head")
             if self.head_queue.full():
                 self.logger.error("head_queue is full! Exiting.")
                 sys.exit(1)
@@ -195,7 +197,7 @@ class Bina:
             keypoint_summary = summarize_keypoints(result["keypoints"], min_conf=0.5)
             self.logger.info(f"new instance in head_pip_line: bbox={result['bbox']} {keypoint_summary} track_id={result['track_id']} @ {result['frame_count']}")
             self.prometheus["queue_size"].labels(stream_id=self.stream_id, model='gender_detection').set(self.head_queue.qsize())
-            
+
             x1, y1, x2, y2 = result["face_bbox"]
             face_crop = image[y1:y2, x1:x2, ...]
             with self.prometheus['inference_latency'].labels(self.stream_id, "face_allignment").time():
@@ -208,7 +210,7 @@ class Bina:
             self.prometheus['model_count'].labels(self.stream_id, "face_allignment").inc()
 
             # plot_img = plot_landmark(face_crop, out_align["bbox"], out_align["keypoints"])
-            
+
             if out_align["score"] < self.fr_landmark_th:
                 self.logger.info(f"ignore instance, low allignment th {out_align['score']:.2f}: track_id={result['track_id']} @ {result['frame_count']}")
                 continue
@@ -218,9 +220,9 @@ class Bina:
             result["face_keypoints"] = [{"x":x1+item["x"], "y":y1+item["y"]} for item in out_align["keypoints"]]
             # plot_img2 = plot_landmark(image, result["face_bbox"], result["face_keypoints"])
             #just work with result!
-            face_crop_padd, face_crop_padd_bbox, face_crop_padd_keypoints = face_padd(image, result["face_bbox"], result["face_keypoints"], padding=0.5) 
+            face_crop_padd, face_crop_padd_bbox, face_crop_padd_keypoints = face_padd(image, result["face_bbox"], result["face_keypoints"], padding=0.5)
             # plot_img3 = plot_landmark(face_crop_padd, face_crop_padd_bbox, face_crop_padd_keypoints)
-            # do warp 
+            # do warp
             img_face_warped = face_warp(face_crop_padd, face_crop_padd_keypoints, scale_factor=1.1)
             # embed the warp face
             try:
@@ -232,9 +234,10 @@ class Bina:
             # vector search
             result["face_embeding"] = embedding
             self.track_vectors[result["track_id"]].append(embedding)
+            self.track_frames[result["track_id"]].append((image, result.copy()))
             result["unique_id"], result["unique_cosine"], result["similar_to"] = self.face_bank.query(embedding)
-            
-            #gender and hijab on head: 
+
+            #gender and hijab on head:
             face_crop_padd, face_crop_padd_bbox, face_crop_padd_keypoints = face_padd(image, result["face_bbox"], result["face_keypoints"], padding=0.1, square=True)
             with self.prometheus['inference_latency'].labels(self.stream_id, "gender_detection").time():
                 try:
@@ -244,32 +247,37 @@ class Bina:
                     continue
                 # gender_result = await self.triton_client_manager.infer(model_name=self.headgender.name, raw_input=face_crop_padd)
             self.prometheus['model_count'].labels(self.stream_id, "gender_detection").inc()
-            
+
             result["gender"] = gender_result["farsi_label"]
             result["gender_score"] = gender_result["score"]
-            
+
             # push to network io, now result contains: bbox, keypoints, face_bbox, face_keypoints face_embeding
             await self.netio_queue.put((image, result))
-                    
-    
+
+
     async def netio_worker(self):
         while True:
+            print("TEst1")
             if self.netio_queue.full():
                 self.logger.error("netio_queue is full! Exiting.")
                 sys.exit(1)
 
             batch= []
+            print("TEst2")
+
             try:
                 # Wait for the first item (blocks)
                 item = await asyncio.wait_for(self.netio_queue.get(), timeout=self.BATCH_TIMEOUT)
                 self.prometheus["queue_size"].labels(stream_id=self.stream_id, model='minio_upload').set(self.netio_queue.qsize())
-                
+
                 batch.append(item)
             except asyncio.TimeoutError:
                 await asyncio.sleep(0.01)
                 continue  # skip iteration if queue is empty during initial wait
 
             # Try to gather more items within the timeout
+            print("TEst3")
+
             start_time = asyncio.get_event_loop().time()
             while len(batch) < self.BATCH_MAX_SIZE:
                 remaining_time = self.BATCH_TIMEOUT - (asyncio.get_event_loop().time() - start_time)
@@ -284,14 +292,35 @@ class Bina:
 
 
             # Unpack batch
+            print("TEst4")
+
             images, results = zip(*batch)
-            filtered_batch = []
             self.logger.info(f"new batch in netio_pip_line: track_ids: {[result['track_id'] for result in results]}")
 
-            # === 1. Vector search (batch) and ignore low looklikes ===
-            #embeddings = [r["face_embeding"] for r in filtered_batch]
+            filtered_batch = []
+            for image, result in batch:
+                if "face_embeding" in result:
+                    filtered_batch.append((image, result))
+
+            if not filtered_batch:
+                fallback_batch = [
+                    (image, result)
+                    for image, result in batch
+                    if "embedding_history" in result and result["embedding_history"]
+                ]
+                if fallback_batch:
+                    self.logger.warning("⚠️ No face_embeding, falling back to embedding_history.")
+                    filtered_batch = fallback_batch
+                    for _, result in filtered_batch:
+                        result["face_embeding"] = result["embedding_history"][-1]  # use latest
+                else:
+                    self.logger.warning("❌ No embeddings at all in batch — skipping.")
+                    continue
+
             embeddings = [r["face_embeding"] for _, r in filtered_batch]
             vectors = np.stack(embeddings)
+
+            print("TEst5")
 
 
             # vector search
@@ -401,10 +430,10 @@ class Bina:
                 if not result.get("frame_link"):
                     result["frame_link"] = frame_link_frame_count[result["frame_count"]]
             self.prometheus['model_count'].labels(self.stream_id, "minio_upload").inc()
-            
+
             print("5✅")
 
-            
+
             # now upload profiles here
             with self.prometheus['inference_latency'].labels(self.stream_id, "profile_upload").time():
                 try:
