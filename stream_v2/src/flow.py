@@ -15,6 +15,7 @@ import sys
 # from deffcode import FFdecoder
 from src.mv_utils.load_stream import RTSPStream as RTSPStream
 from src.network_io.identity_manager import IdentityManager
+# from src.network_io.face_session import FaceSession, SessionManager
 import time
 from collections import defaultdict, deque
 
@@ -264,7 +265,6 @@ class Bina:
             # push to network io, now result contains: bbox, keypoints, face_bbox, face_keypoints face_embeding
             await self.netio_queue.put((image, result))
 
-
     async def netio_worker(self):
         """Batch-oriented network I/O: search vectors, upload media, push profiles, insert into Milvus."""
         while True:
@@ -399,7 +399,6 @@ class Bina:
 
                 await self.identity_manager.insert_identity_vectors(identity_id, embeds)
                 print(f"✅ inserted 3 vectors → identity_id={identity_id}")
-
 
     async def _upload_task(self, image, frame_num, res, dir_name):
         res[f"{dir_name}_link"] = await self.minio.upload_image(image=image, frame_num=frame_num, dir_name=dir_name)

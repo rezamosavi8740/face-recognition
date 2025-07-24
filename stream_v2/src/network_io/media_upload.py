@@ -19,7 +19,7 @@ class MinioImageUploader:
 
         self.client = Minio(
             endpoint=config.minio.endpoint,
-            access_key=config.minio.access_key,
+            access_key=config.minio.access_key.shared_user2,
             secret_key=config.minio.secret_key,
             secure=config.minio.base_url.startswith("https://")
         )
