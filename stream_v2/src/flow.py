@@ -117,7 +117,6 @@ class Bina:
 
     async def pose_worker(self,):
         while True:
-            #print("pose")
 
             if time.time() - self.latest_frame_read_time > 120:
                 self.logger.error(f"No valid frame received on stream {self.stream_id}. EXIT")
@@ -151,17 +150,28 @@ class Bina:
             results = self.tracker.update(results, image.shape[:2], image.shape[:2])
 
             #delete vector Que
-            current_ids = set(det["track_id"] for det in results)
+            current_ids = {det["track_id"] for det in results}
             all_ids = set(self.track_vectors.keys())
-            for old_id in all_ids - current_ids:
-                frames_and_results = list(self.track_frames[old_id])
-                embeddings = list(self.track_vectors[old_id])
 
-                # Attach embedding history to last result only
-                if frames_and_results:
-                    image, result = frames_and_results[-1]
-                    result["embedding_history"] = embeddings
-                    await self.netio_queue.put((image, result))
+            for old_id in all_ids - current_ids:
+                embeddings = list(self.track_vectors[old_id])
+                frames_and_results = list(self.track_frames[old_id])
+
+                if not embeddings or not frames_and_results:
+                    del self.track_vectors[old_id]
+                    del self.track_frames[old_id]
+                    continue
+
+                top_pairs = sorted(
+                    frames_and_results,
+                    key=lambda p: p[1].get("face_score", p[1].get("temp_face_score", 0)),
+                    reverse=True
+                )[:3]
+
+                for img, res in top_pairs:
+                    res["embedding_history"] = embeddings
+                    res["track_lost"] = True
+                    await self.netio_queue.put((img, res))
 
                 del self.track_vectors[old_id]
                 del self.track_frames[old_id]
@@ -256,244 +266,139 @@ class Bina:
 
 
     async def netio_worker(self):
+        """Batch-oriented network I/O: search vectors, upload media, push profiles, insert into Milvus."""
         while True:
-            print("TEst1")
-            if self.netio_queue.full():
-                self.logger.error("netio_queue is full! Exiting.")
-                sys.exit(1)
-
-            batch= []
-            print("TEst2")
-
             try:
-                # Wait for the first item (blocks)
+                # ──────────────────── 1) Build a batch ────────────────────
+                batch: list[tuple[np.ndarray, dict]] = []
                 item = await asyncio.wait_for(self.netio_queue.get(), timeout=self.BATCH_TIMEOUT)
-                self.prometheus["queue_size"].labels(stream_id=self.stream_id, model='minio_upload').set(self.netio_queue.qsize())
-
                 batch.append(item)
+
+                start = asyncio.get_event_loop().time()
+                while len(batch) < self.BATCH_MAX_SIZE:
+                    remaining = self.BATCH_TIMEOUT - (asyncio.get_event_loop().time() - start)
+                    if remaining <= 0:
+                        break
+                    try:
+                        item = await asyncio.wait_for(self.netio_queue.get(), timeout=remaining)
+                        batch.append(item)
+                    except asyncio.TimeoutError:
+                        break
             except asyncio.TimeoutError:
                 await asyncio.sleep(0.01)
-                continue  # skip iteration if queue is empty during initial wait
+                continue
 
-            # Try to gather more items within the timeout
-            print("TEst3")
-
-            start_time = asyncio.get_event_loop().time()
-            while len(batch) < self.BATCH_MAX_SIZE:
-                remaining_time = self.BATCH_TIMEOUT - (asyncio.get_event_loop().time() - start_time)
-                if remaining_time <= 0:
-                    break
-
-                try:
-                    item = await asyncio.wait_for(self.netio_queue.get(), timeout=remaining_time)
-                    batch.append(item)
-                except asyncio.TimeoutError:
-                    break  # no more items in time
-
-
-            # Unpack batch
-            print("TEst4")
-
-            images, results = zip(*batch)
-            self.logger.info(f"new batch in netio_pip_line: track_ids: {[result['track_id'] for result in results]}")
-
-            filtered_batch = []
+            # ──────────────────── 2) Collect embeddings ────────────────────
+            filtered_batch: list[tuple[np.ndarray, dict]] = []
             for image, result in batch:
                 if "face_embeding" in result:
                     filtered_batch.append((image, result))
 
             if not filtered_batch:
-                fallback_batch = [
-                    (image, result)
-                    for image, result in batch
-                    if "embedding_history" in result and result["embedding_history"]
+                fallback = [
+                    (img, res)
+                    for img, res in batch
+                    if res.get("embedding_history")
                 ]
-                if fallback_batch:
-                    self.logger.warning("⚠️ No face_embeding, falling back to embedding_history.")
-                    filtered_batch = fallback_batch
-                    for _, result in filtered_batch:
-                        result["face_embeding"] = result["embedding_history"][-1]  # use latest
+                if not fallback:
+                    continue
+                # Use latest embedding from history
+                for _, res in fallback:
+                    res["face_embeding"] = res["embedding_history"][-1]
+                filtered_batch = fallback
+
+            vectors = np.stack([r["face_embeding"] for _, r in filtered_batch])
+
+            # ──────────────────── 3) Search Milvus ────────────────────
+            try:
+                with self.prometheus['inference_latency'].labels(self.stream_id, "vector_search").time():
+                    search_results = await asyncio.wait_for(
+                        self.vs.do_search(vectors),
+                        timeout=6 * self.BATCH_TIMEOUT
+                    )
+                self.prometheus['model_count'].labels(self.stream_id, "vector_search").inc()
+            except asyncio.TimeoutError:
+                self.logger.error("vector_search timed out")
+                continue
+
+            # ──────────────────── 4) Attach search results ────────────────────
+            processed_batch: list[tuple[np.ndarray, dict]] = []
+
+            for (image, result), look_like in zip(filtered_batch, search_results):
+                if look_like and look_like[0]["score"] >= self.fr_looklike_th:
+                    result["looklike"] = look_like
+
+                    looklike_id = look_like[0].get("identity_id") or look_like[0].get("id")
+                    if isinstance(looklike_id, str) and looklike_id.isdecimal():
+                        looklike_id = int(looklike_id)
+                    elif isinstance(looklike_id, np.integer):
+                        looklike_id = int(looklike_id)
+
+                    result["identity_id"] = looklike_id
                 else:
-                    self.logger.warning("❌ No embeddings at all in batch — skipping.")
-                    continue
-
-            embeddings = [r["face_embeding"] for _, r in filtered_batch]
-            vectors = np.stack(embeddings)
-
-            print("TEst5")
-
-
-            # vector search
-            with self.prometheus['inference_latency'].labels(self.stream_id, "vector_search").time():
-                try:
-                    search_results = await asyncio.wait_for(self.vs.do_search(vectors), timeout=6*self.BATCH_TIMEOUT)
-                except asyncio.TimeoutError:
-                    self.logger.error(f"Search timed out after {6*self.BATCH_TIMEOUT:.2f} seconds")
-                    print("❌")
-                    continue
-            self.prometheus['model_count'].labels(self.stream_id, "vector_search").inc()
-
-            print("1✅")
-
-            # del embeddings, vectors
-
-            filtered_batch = []
-            for (image, result), look_like in zip(batch, search_results):
-                if not look_like:
-                    # No result found – handle accordingly (e.g., skip or log)
                     result["looklike"] = []
                     result["identity_id"] = None
-                    filtered_batch.append((image, result))
-                    self.logger.info(
-                        f"No similar identity found: track_id={result['track_id']} @ {result['frame_count']}"
-                    )
 
-                    continue
+                processed_batch.append((image, result))
+            # ──────────────────── 5) Upload images to MinIO ────────────────────
+            frame_uploaded: set[int] = set()
+            upload_tasks: list[asyncio.Task] = []
+            for image, res in processed_batch:
+                fc = res["frame_count"]
 
-                if look_like[0]["score"] < self.fr_looklike_th:
-
-                    self.logger.info(
-                        f"ignore instance, low looklike th {look_like[0]['score']:.4f} : "
-                        f"track_id={result['track_id']} @ {result['frame_count']}"
-                    )
-                    continue
-
-                result["looklike"] = look_like
-                result.pop("face_embeding", None)
-                filtered_batch.append((image, result))
-
-
-            print("2✅")
-            """
-            if not filtered_batch:
-                for image, result in batch:
-                    del image
-                    result.clear()
-                del batch
-                continue
-            """
-            if not filtered_batch:
-                filtered_batch = [
-                    (image, result) for image, result in batch
-                    if "embedding_history" in result and result["embedding_history"]
-                ]
-                if not filtered_batch:
-                    continue
-
-            print("3✅")
-
-            print("3✅")
-
-            # === 2. MinIO uploads: assign links directly ===
-            frame_uploaded = set()
-            upload_tasks = []
-            for image, result in filtered_batch:
-            # for image, result in zip(images, results):
-                fc = result["frame_count"]
-
-                # --- Upload full frame once per frame count ---
+                # Full frame (once per frame count)
                 if fc not in frame_uploaded:
-                    upload_tasks.append(asyncio.create_task(self._upload_task(image, fc, result, "frame")))
+                    upload_tasks.append(asyncio.create_task(
+                        self._upload_task(image, fc, res, "frame")
+                    ))
                     frame_uploaded.add(fc)
 
-                # --- Upload face crop ---
-                x1, y1, x2, y2 = result["face_bbox"]
-                face_crop = image[y1:y2, x1:x2, ...]
+                # Face crop
+                x1, y1, x2, y2 = res["face_bbox"]
+                upload_tasks.append(asyncio.create_task(
+                    self._upload_task(image[y1:y2, x1:x2, ...], fc, res, "face")
+                ))
 
-                upload_tasks.append(asyncio.create_task(self._upload_task(face_crop, fc, result, "face")))
+                # Body crop
+                x1b, y1b, x2b, y2b = res["bbox"]
+                upload_tasks.append(asyncio.create_task(
+                    self._upload_task(image[y1b:y2b, x1b:x2b, ...], fc, res, "body")
+                ))
 
-                # --- Upload body crop ---
-                x1b, y1b, x2b, y2b = result["bbox"]
-                body_crop = image[y1b:y2b, x1b:x2b, ...]
-
-
-                upload_tasks.append(asyncio.create_task(self._upload_task(body_crop, fc, result, "body")))
-
-            # === Run all upload tasks concurrently and safely assign links ===
-
-            print("4✅")
-
-            with self.prometheus['inference_latency'].labels(self.stream_id, "minio_upload").time():
-                try:
+            try:
+                with self.prometheus['inference_latency'].labels(self.stream_id, "minio_upload").time():
                     await asyncio.wait_for(asyncio.gather(*upload_tasks), timeout=5 * self.BATCH_TIMEOUT)
-                except asyncio.TimeoutError:
-                    self.logger.error(f"minio timed out after {5 * self.BATCH_TIMEOUT:.2f} seconds")
-                    for task in upload_tasks:
-                        task.cancel()
-                    await asyncio.gather(*upload_tasks, return_exceptions=True)
-                    continue
+                self.prometheus['model_count'].labels(self.stream_id, "minio_upload").inc()
+            except asyncio.TimeoutError:
+                self.logger.error("minio_upload timed out")
+                for t in upload_tasks:
+                    t.cancel()
+                await asyncio.gather(*upload_tasks, return_exceptions=True)
+                continue
 
-            frame_link_frame_count = {
-                result["frame_count"]: result["frame_link"]
-                for result in results
-                if result.get("frame_link")
-            }
-
-            for result in results:
-                if not result.get("frame_link"):
-                    fc = result["frame_count"]
-                    if fc not in frame_link_frame_count:
-                        self.logger.warning(
-                            f"Missing frame_link for frame_count={fc}, track_id={result.get('track_id')}"
-                        )
-                        result["frame_link"] = "N/A"
-                    else:
-                        result["frame_link"] = frame_link_frame_count[fc]
-
-            self.prometheus['model_count'].labels(self.stream_id, "minio_upload").inc()
-
-            print("5✅")
-
-
-            # now upload profiles here
-            with self.prometheus['inference_latency'].labels(self.stream_id, "profile_upload").time():
-                try:
-                    await asyncio.wait_for(self.elastic.upload_profiles(results, self.stream_id), timeout=3*self.BATCH_TIMEOUT)
-                except asyncio.TimeoutError:
-                    self.logger.error(f"profile upload timed out after {3*self.BATCH_TIMEOUT:.2f} seconds")
-                    continue
-            self.prometheus['model_count'].labels(self.stream_id, "profile_upload").inc()
-
-            face_links = [result.get("face_link", "N/A") for result in results]
-            self.logger.info(
-                f"uploaded well:  track_ids: {[result['track_id'] for result in results]} :  @ {[result['frame_count'] for result in results]}\nface_links={face_links}\n"
-            )
-            with self.prometheus['inference_latency'].labels(self.stream_id, "profile_upload").time():
-                try:
+            # ──────────────────── 6) Push profiles to Elasticsearch ────────────────────
+            try:
+                with self.prometheus['inference_latency'].labels(self.stream_id, "profile_upload").time():
                     await asyncio.wait_for(
-                        self.elastic.upload_profiles(results, self.stream_id),
+                        self.elastic.upload_profiles([r for _, r in processed_batch], self.stream_id),
                         timeout=3 * self.BATCH_TIMEOUT
                     )
-                except asyncio.TimeoutError:
-                    self.logger.error(f"profile upload timed out after {3 * self.BATCH_TIMEOUT:.2f} seconds")
+                self.prometheus['model_count'].labels(self.stream_id, "profile_upload").inc()
+            except asyncio.TimeoutError:
+                self.logger.error("profile_upload timed out")
+
+            # ──────────────────── 7) Insert vectors into Milvus ────────────────────
+            for _, res in processed_batch:
+                embeds = res.get("embedding_history")
+                if not embeds:
                     continue
 
-            print("6✅")
-
-
-            #  Insert valid embeddings into Milvus
-            for _, result in filtered_batch:
-                embedding_list = result.get("embedding_history", [])
-                if not embedding_list:
-                    continue
-
-                # Try identity from existing fields
-                identity_id = result.get("identity_id")
-                if identity_id is None:
-                    looklike = result.get("looklike") or [{}]
-                    identity_id = looklike[0].get("id")
-
-                # If not found or doesn't exist in Milvus, create new
+                identity_id = res.get("identity_id")
                 if identity_id is None or not await self.identity_manager.identity_exists(identity_id):
                     identity_id = await self.identity_manager.get_next_identity_id()
 
-                # Optional: store assigned ID for logging or later use
-                result["identity_id"] = identity_id
-
-                # Insert embeddings to Milvus
-                print("last✅")
-
-                await self.identity_manager.insert_identity_vectors(identity_id, embedding_list)
+                await self.identity_manager.insert_identity_vectors(identity_id, embeds)
+                print(f"✅ inserted 3 vectors → identity_id={identity_id}")
 
 
     async def _upload_task(self, image, frame_num, res, dir_name):

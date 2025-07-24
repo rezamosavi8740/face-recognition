@@ -1,46 +1,67 @@
-from typing import List
+from typing import Sequence, Union
 import uuid
-import time
+import secrets
+import numbers
+import numpy as np
 
 class IdentityManager:
-    def __init__(self, milvus_client, collection_name):
+    """Utility for querying and inserting identity vectors in Milvus."""
+
+    def __init__(self, milvus_client, collection_name: str, auto_flush: bool = False) -> None:
         self.client = milvus_client
         self.collection_name = collection_name
+        self.auto_flush = auto_flush  # flush collection automatically after insert if True
 
-    async def identity_exists(self, identity_id: int) -> bool:
-        assert isinstance(identity_id, int), f"identity_id must be int, got {type(identity_id)}"
+    # ──────────────────────────────────────────────────────────────────────────────
 
-        # توصیه: قبلش flush مطمئن برای دیتای تازه
-        await self.client.flush([self.collection_name])
+    async def identity_exists(self, identity_id) -> bool:
+        if isinstance(identity_id, np.integer):
+            identity_id = int(identity_id)
+        if isinstance(identity_id, str) and identity_id.isdecimal():
+            identity_id = int(identity_id)
 
-        expr = f"identity_id == {identity_id}"
-        results = await self.client.query(
-            collection_name=self.collection_name,
-            expr=expr,
-            output_fields=["identity_id"]
+        if not isinstance(identity_id, numbers.Integral):
+            self.logger.warning(f"❌ Unexpected identity_id type: {type(identity_id)} → {identity_id}")
+            return False
+
+        rows = await self.client.query(
+            self.collection_name,  # ← collection_name
+            f"identity_id == {identity_id}",  # ← expr (positional)
+            output_fields=["identity_id"],  # ← keyword
         )
-
-        return len(results) > 0
-
+        return bool(rows)
+    # ──────────────────────────────────────────────────────────────────────────────
     async def get_next_identity_id(self) -> int:
-        # تولید عدد یونیک بر اساس timestamp
-        return int(time.time() * 1000)
+        # 12-digit random integer (0–999,999,999,999) – collision-safe for practical usage
+        return secrets.randbelow(10**12)
 
-    async def insert_identity_vectors(self, identity_id: int, vectors: List, url: str = "N/A"):
-        """
-        Insert vectors into Milvus with correct data types.
-        Each vector gets a unique UUID as vector_id.
-        """
-        # آماده‌سازی داده به صورت row-based
-        data = [
+    # ──────────────────────────────────────────────────────────────────────────────
+    async def insert_identity_vectors(self, identity_id, vectors, url: str = "N/A"):
+        """Insert a list of embeddings; auto-fix or regenerate identity_id if needed."""
+        # force identity_id → int64, otherwise make a new one
+        if isinstance(identity_id, str) and identity_id.isdecimal():
+            identity_id = int(identity_id)
+        elif isinstance(identity_id, np.integer):
+            identity_id = int(identity_id)
+        elif not isinstance(identity_id, numbers.Integral):
+            identity_id = await self.get_next_identity_id()
+
+        rows = [
             {
-                "vector_id": str(uuid.uuid4()),      # رشته با max_length=100
-                "identity_id": identity_id,          # عدد صحیح int64
-                #"url": url,                          # رشته با max_length=500
-                "vector": vector.tolist()            # لیست 512 تایی از float
+                "vector_id": str(uuid.uuid4()),
+                "identity_id": identity_id,
+                "url": url,
+                "vector": v.tolist(),
             }
-            for vector in vectors
+            for v in vectors
         ]
 
-        # درج در Milvus
-        await self.client.insert(collection_name=self.collection_name, data=data)
+        await self.client.insert(self.collection_name, rows)
+
+        """
+        # decide whether to flush
+        if flush is None:
+            flush = self.auto_flush
+        if flush:
+            await self.client.flush([self.collection_name])
+        """
